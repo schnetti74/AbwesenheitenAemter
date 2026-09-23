@@ -545,6 +545,8 @@
       '<p class="termin-sub">Erstellt für jeden Mittwoch einen gemeinsamen Termin (19:30) und für jeden Sonntag je einen Termin pro Gemeinde (10:00). Bereits vorhandene Termine am selben Tag werden nicht doppelt angelegt.</p>' +
       '<label for="serMonth">Monat</label>' +
       '<select id="serMonth">' + monthOptionsHtml() + '</select>' +
+      '<label for="serOrt">Ort der gemeinsamen Mittwochsgottesdienste</label>' +
+      '<select id="serOrt"><option value="boele">Boele</option><option value="hohenlimburg">Hohenlimburg</option></select>' +
       '<button class="btn-primary" id="serSubmit">Serie erstellen</button>' +
       '<div id="serMsg" class="hint" style="display:none;"></div>' +
       '</div>';
@@ -615,6 +617,7 @@
 
   function createSeries(){
     var monthVal = document.getElementById('serMonth').value;
+    var ortVal = document.getElementById('serOrt').value;
     var msg = document.getElementById('serMsg');
     if (!monthVal) { msg.textContent = 'Bitte einen Monat wählen.'; msg.style.display='block'; return; }
     var parts = monthVal.split('-');
@@ -627,7 +630,7 @@
       var wd = d.getDay();
       if (wd === 3) {
         if (!existsTermin(iso, null, true)) {
-          toCreate.push({ datum: iso, uhrzeit:'19:30', bezeichnung:'Mittwochsgottesdienst', gemeinsam:true, gemeinde:null, ort:null, seriesId: seriesId });
+          toCreate.push({ datum: iso, uhrzeit:'19:30', bezeichnung:'Mittwochsgottesdienst', gemeinsam:true, gemeinde:null, ort:ortVal, seriesId: seriesId });
         }
       } else if (wd === 0) {
         ['boele','hohenlimburg'].forEach(function(g){
