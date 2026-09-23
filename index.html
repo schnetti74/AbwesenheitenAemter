@@ -1,0 +1,689 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Dienstplan Amtsträger · Boele &amp; Hohenlimburg</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+
+<!-- Firebase (App + Firestore, compat build) -->
+<script src="https://cdn.jsdelivr.net/npm/firebase@10.12.2/firebase-app-compat.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/firebase@10.12.2/firebase-firestore-compat.js"></script>
+
+<style>
+  :root {
+    --bg: #F5F0E4; --bg-alt: #ECE3D0; --card: #FFFDF7; --ink: #21293A; --ink-soft: #5B6579;
+    --gold: #8C6A2F; --gold-strong: #6E5222; --border: #DED2B4;
+    --green: #3E6E4F; --green-bg: #E3EEE3; --red: #A24438; --red-bg: #F4E4E1; --gray-bg: #EDE9DD;
+    --blue: #3E5C8A; --blue-bg: #E3E9F2;
+    --amber: #9C7B23; --amber-bg: #F2ECD8;
+    box-sizing: border-box;
+    padding-top: env(safe-area-inset-top, 0px);
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg:#171B26; --bg-alt:#1E2432; --card:#212736; --ink:#EAE4D3; --ink-soft:#A7A192;
+      --gold:#D6B36E; --gold-strong:#E8C685; --border:#333B4D;
+      --green:#8FC49E; --green-bg:#253A2C; --red:#E2988A; --red-bg:#3B2622; --gray-bg:#2A3040;
+      --blue:#9FB4D9; --blue-bg:#232C3E; --amber:#E3C878; --amber-bg:#332C1B;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg:#171B26; --bg-alt:#1E2432; --card:#212736; --ink:#EAE4D3; --ink-soft:#A7A192;
+    --gold:#D6B36E; --gold-strong:#E8C685; --border:#333B4D;
+    --green:#8FC49E; --green-bg:#253A2C; --red:#E2988A; --red-bg:#3B2622; --gray-bg:#2A3040;
+    --blue:#9FB4D9; --blue-bg:#232C3E; --amber:#E3C878; --amber-bg:#332C1B;
+  }
+  html, body { height: 100%; }
+  html { scroll-padding-top: env(safe-area-inset-top, 0px); }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--bg); color:var(--ink); font-family:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif; -webkit-font-smoothing:antialiased; }
+  .wrap { max-width: 680px; margin:0 auto; padding:0 16px 56px; }
+  header.top { position:sticky; top:0; top:env(safe-area-inset-top,0px); background:var(--bg); z-index:10; padding:18px 0 10px; border-bottom:1px solid var(--border); }
+  h1 { font-family:'Fraunces',Georgia,serif; font-weight:600; font-size:1.4rem; letter-spacing:-0.01em; margin:0 0 2px; }
+  .place { font-size:0.85rem; color:var(--gold); font-weight:500; margin:0 0 12px; }
+  .whoami { display:flex; align-items:center; justify-content:space-between; font-size:0.85rem; color:var(--ink-soft); flex-wrap:wrap; gap:6px; }
+  .whoami button { background:none; border:none; color:var(--gold); font-weight:600; cursor:pointer; padding:4px 0; font-size:0.85rem; font-family:inherit; }
+  nav.tabs { display:flex; gap:4px; margin-top:14px; flex-wrap:wrap; }
+  nav.tabs button { flex:1; min-width:74px; background:var(--bg-alt); border:1px solid var(--border); color:var(--ink-soft); padding:9px 4px; border-radius:9px; font-size:0.78rem; font-weight:600; font-family:inherit; cursor:pointer; }
+  nav.tabs button.active { background:var(--ink); color:var(--bg); border-color:var(--ink); }
+  section.view { display:none; padding-top:18px; }
+  section.view.active { display:block; }
+  .card { background:var(--card); border:1px solid var(--border); border-radius:12px; padding:14px 16px; margin-bottom:12px; }
+  .termin-date { font-family:'Fraunces',Georgia,serif; font-size:1.02rem; font-weight:500; margin:0 0 2px; }
+  .termin-sub { font-size:0.82rem; color:var(--ink-soft); margin:0 0 10px; }
+  .tag { display:inline-block; font-size:0.68rem; font-weight:700; padding:2px 8px; border-radius:20px; margin-right:6px; letter-spacing:0.01em; }
+  .tag.gemeinsam { background:var(--amber-bg); color:var(--amber); }
+  .tag.boele { background:var(--blue-bg); color:var(--blue); }
+  .tag.hohenlimburg { background:var(--green-bg); color:var(--green); }
+  .status-row { display:flex; gap:6px; margin-top:10px; }
+  .status-btn { flex:1; padding:9px 4px; border-radius:8px; border:1px solid var(--border); background:var(--bg-alt); color:var(--ink-soft); font-family:inherit; font-size:0.8rem; font-weight:600; cursor:pointer; }
+  .status-btn.sel-anwesend { background:var(--green-bg); border-color:var(--green); color:var(--green); }
+  .status-btn.sel-abwesend { background:var(--red-bg); border-color:var(--red); color:var(--red); }
+  .status-btn.sel-offen { background:var(--gray-bg); border-color:var(--ink-soft); color:var(--ink-soft); }
+  .empty { text-align:center; color:var(--ink-soft); font-size:0.9rem; padding:36px 10px; }
+  .filter-row { display:flex; gap:6px; margin-bottom:14px; }
+  .filter-row button { flex:1; padding:8px 4px; border-radius:8px; border:1px solid var(--border); background:var(--bg-alt); color:var(--ink-soft); font-family:inherit; font-size:0.78rem; font-weight:600; cursor:pointer; }
+  .filter-row button.active { background:var(--ink); color:var(--bg); border-color:var(--ink); }
+  .matrix-scroll { overflow-x:auto; border:1px solid var(--border); border-radius:12px; background:var(--card); margin-bottom:14px; }
+  table.matrix { border-collapse:collapse; width:100%; font-size:0.8rem; }
+  table.matrix th, table.matrix td { padding:8px 10px; border-bottom:1px solid var(--border); text-align:left; white-space:nowrap; }
+  table.matrix th.namecol { font-weight:600; color:var(--ink-soft); font-size:0.72rem; }
+  table.matrix td.datecell { font-weight:600; }
+  table.matrix td.datecell .sub { display:block; font-weight:400; color:var(--ink-soft); font-size:0.7rem; }
+  .badge { display:inline-block; width:22px; height:22px; line-height:22px; text-align:center; border-radius:6px; font-size:0.8rem; }
+  .badge.anwesend { background:var(--green-bg); color:var(--green); }
+  .badge.abwesend { background:var(--red-bg); color:var(--red); }
+  .badge.offen { background:var(--gray-bg); color:var(--ink-soft); }
+  label { display:block; font-size:0.78rem; font-weight:600; color:var(--ink-soft); margin:12px 0 5px; }
+  label:first-child { margin-top:0; }
+  input[type=text], input[type=date], input[type=time], input[type=password], input[type=month], select {
+    width:100%; padding:10px 11px; border-radius:8px; border:1px solid var(--border); background:var(--bg-alt); color:var(--ink); font-family:inherit; font-size:0.92rem;
+  }
+  input:focus, select:focus, .status-btn:focus-visible, button:focus-visible { outline:2px solid var(--gold); outline-offset:1px; }
+  .checkline { display:flex; align-items:center; gap:8px; margin-top:12px; }
+  .checkline input[type=checkbox] { width:18px; height:18px; }
+  .checkline label { margin:0; }
+  .btn-primary { margin-top:16px; width:100%; background:var(--gold-strong); color:#FFFDF7; border:none; padding:12px; border-radius:9px; font-family:inherit; font-weight:600; font-size:0.92rem; cursor:pointer; }
+  .btn-secondary { background:none; border:1px solid var(--border); color:var(--ink-soft); padding:6px 10px; border-radius:7px; font-family:inherit; font-size:0.74rem; cursor:pointer; }
+  .btn-danger { color:var(--red); border-color:var(--red); }
+  .hint { font-size:0.78rem; color:var(--ink-soft); margin-top:6px; }
+  .error-msg { color:var(--red); font-size:0.82rem; margin-top:8px; }
+  .ok-msg { color:var(--green); font-size:0.82rem; margin-top:8px; }
+  .row-actions { display:flex; gap:6px; }
+  .termin-admin-row { padding:10px 0; border-bottom:1px solid var(--border); }
+  .termin-admin-row:last-child { border-bottom:none; }
+  .termin-admin-row .top-line { display:flex; align-items:center; justify-content:space-between; gap:8px; }
+  .termin-admin-row .info { font-size:0.85rem; }
+  .termin-admin-row .info .sub { color:var(--ink-soft); font-size:0.74rem; }
+  .edit-box { margin-top:10px; padding-top:10px; border-top:1px dashed var(--border); }
+  .section-title { font-family:'Fraunces',Georgia,serif; font-size:1.02rem; font-weight:500; margin:0 0 4px; }
+  .am-row { display:flex; align-items:center; justify-content:space-between; padding:8px 0; border-bottom:1px solid var(--border); font-size:0.86rem; }
+  .am-row:last-child { border-bottom:none; }
+  #onboarding { display:flex; align-items:center; min-height:100vh; min-height:100%; padding:24px 16px; }
+  .onb-box { max-width:420px; margin:0 auto; width:100%; }
+  .onb-box h1 { font-size:1.6rem; margin-bottom:8px; }
+  .onb-box p { color:var(--ink-soft); font-size:0.92rem; line-height:1.5; }
+  #suggestions { display:flex; flex-wrap:wrap; gap:6px; margin-top:8px; }
+  .sugg-chip { background:var(--bg-alt); border:1px solid var(--border); color:var(--ink-soft); padding:5px 10px; border-radius:20px; font-size:0.78rem; cursor:pointer; font-family:inherit; }
+  .gcard { display:flex; gap:8px; margin-top:6px; }
+  .gcard button { flex:1; padding:12px 6px; border-radius:9px; border:1px solid var(--border); background:var(--bg-alt); color:var(--ink); font-family:inherit; font-weight:600; font-size:0.9rem; cursor:pointer; }
+  .gcard button.sel { background:var(--ink); color:var(--bg); border-color:var(--ink); }
+  #setupNotice { background:var(--red-bg); color:var(--red); border:1px solid var(--red); border-radius:10px; padding:12px 14px; font-size:0.85rem; margin:16px; }
+</style>
+</head>
+<body>
+
+<div id="setupNoticeWrap"></div>
+
+<div id="onboarding" style="display:none;">
+  <div class="onb-box">
+    <p class="place" style="margin-bottom:6px;">Dienstplan Amtsträger</p>
+    <h1>Wer bist du?</h1>
+    <p>Trage deinen Namen ein und wähle deine Gemeinde, um Gottesdienste als anwesend oder abwesend zu markieren.</p>
+    <label for="nameInput">Name</label>
+    <input type="text" id="nameInput" placeholder="Vor- und Nachname" autocomplete="name">
+    <div id="suggestions"></div>
+    <label>Gemeinde</label>
+    <div class="gcard">
+      <button type="button" id="gBoele" data-g="boele">Boele</button>
+      <button type="button" id="gHohenlimburg" data-g="hohenlimburg">Hohenlimburg</button>
+    </div>
+    <button class="btn-primary" id="startBtn">Loslegen</button>
+  </div>
+</div>
+
+<div class="wrap" id="appWrap" style="display:none;">
+  <header class="top">
+    <h1>Dienstplan Amtsträger</h1>
+    <p class="place">Boele &amp; Hohenlimburg</p>
+    <div class="whoami">
+      <span>Angemeldet als <strong id="whoName"></strong> <span id="whoGemeinde" class="tag"></span></span>
+      <button id="switchBtn">Wechseln</button>
+    </div>
+    <nav class="tabs">
+      <button class="tab-btn active" data-tab="meine">Meine Termine</button>
+      <button class="tab-btn" data-tab="uebersicht">Übersicht</button>
+      <button class="tab-btn" data-tab="admin">Termine</button>
+    </nav>
+  </header>
+
+  <section class="view active" id="view-meine">
+    <div id="meineList"></div>
+  </section>
+
+  <section class="view" id="view-uebersicht">
+    <div class="filter-row" id="uebFilter">
+      <button data-f="boele" class="active">Boele</button>
+      <button data-f="hohenlimburg">Hohenlimburg</button>
+      <button data-f="gemeinsam">Gemeinsam</button>
+    </div>
+    <div id="uebersichtWrap"></div>
+  </section>
+
+  <section class="view" id="view-admin">
+    <div id="adminWrap"></div>
+  </section>
+</div>
+
+<script>
+(function(){
+  // ============================================================
+  // FIREBASE-KONFIGURATION — hier deine eigenen Werte eintragen.
+  // Firebase-Konsole → Projekteinstellungen → "Meine Apps" → Web-App
+  // → Feld "firebaseConfig".
+  // ============================================================
+  var firebaseConfig = {
+    apiKey: "AIzaSyCb3NYSuzpspiq2YipoX3-tTqa6L1RIxdU",
+    authDomain: "anwesenheitenamtstraeger.firebaseapp.com",
+    projectId: "anwesenheitenamtstraeger",
+    storageBucket: "anwesenheitenamtstraeger.firebasestorage.app",
+    messagingSenderId: "996432634826",
+    appId: "1:996432634826:web:96dd924745f96350afa533"
+  };
+  // ============================================================
+
+  var CONFIGURED = firebaseConfig.apiKey && firebaseConfig.apiKey.indexOf('DEIN_') !== 0;
+  var db = null;
+
+  if (CONFIGURED) {
+    try {
+      firebase.initializeApp(firebaseConfig);
+      db = firebase.firestore();
+    } catch(e) {
+      CONFIGURED = false;
+    }
+  }
+
+  if (!CONFIGURED) {
+    document.getElementById('setupNoticeWrap').innerHTML =
+      '<div id="setupNotice">Diese App ist noch nicht eingerichtet: Bitte in der Datei den Abschnitt ' +
+      '<code>firebaseConfig</code> am Anfang des Skripts mit den eigenen Firebase-Zugangsdaten ausfüllen.</div>';
+  }
+
+  var GEMEINDEN = { boele: 'Boele', hohenlimburg: 'Hohenlimburg' };
+
+  var myName = null, mySlug = null, myGemeinde = null;
+  var termine = [];
+  var amtstraeger = [];
+  var statusList = [];
+  var activeTab = 'meine';
+  var uebFilter = 'boele';
+  var selectedOnboardG = null;
+
+  function slugify(s){
+    return (s||'').trim().toLowerCase()
+      .normalize('NFD').replace(/[\u0300-\u036f]/g,'')
+      .replace(/ä/g,'ae').replace(/ö/g,'oe').replace(/ü/g,'ue').replace(/ß/g,'ss')
+      .replace(/[^a-z0-9]+/g,'-').replace(/^-+|-+$/g,'') || 'person';
+  }
+  function escapeHtml(s){
+    return String(s||'').replace(/[&<>"']/g, function(c){ return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]; });
+  }
+  var WOCHENTAGE = ['Sonntag','Montag','Dienstag','Mittwoch','Donnerstag','Freitag','Samstag'];
+  function fmtDatum(iso){
+    var d = new Date(iso + 'T00:00:00');
+    if (isNaN(d.getTime())) return { tag: iso, datum: '' };
+    var tag = WOCHENTAGE[d.getDay()];
+    var datum = String(d.getDate()).padStart(2,'0') + '.' + String(d.getMonth()+1).padStart(2,'0') + '.' + d.getFullYear();
+    return { tag: tag, datum: datum };
+  }
+  function sortByDatumZeit(a,b){
+    var da = (a.datum||'') + ' ' + (a.uhrzeit||'');
+    var db_ = (b.datum||'') + ' ' + (b.uhrzeit||'');
+    return da < db_ ? -1 : da > db_ ? 1 : 0;
+  }
+
+  // ---------- onboarding ----------
+  var savedName = null, savedGemeinde = null;
+  try { savedName = localStorage.getItem('dp_name'); savedGemeinde = localStorage.getItem('dp_gemeinde'); } catch(e){}
+
+  function showOnboarding(){
+    document.getElementById('onboarding').style.display = 'flex';
+    document.getElementById('appWrap').style.display = 'none';
+  }
+  function showApp(){
+    document.getElementById('onboarding').style.display = 'none';
+    document.getElementById('appWrap').style.display = 'block';
+    document.getElementById('whoName').textContent = myName;
+    var wg = document.getElementById('whoGemeinde');
+    wg.textContent = GEMEINDEN[myGemeinde] || '';
+    wg.className = 'tag ' + myGemeinde;
+  }
+
+  document.getElementById('gBoele').addEventListener('click', function(){ selectG('boele'); });
+  document.getElementById('gHohenlimburg').addEventListener('click', function(){ selectG('hohenlimburg'); });
+  function selectG(g){
+    selectedOnboardG = g;
+    document.getElementById('gBoele').classList.toggle('sel', g==='boele');
+    document.getElementById('gHohenlimburg').classList.toggle('sel', g==='hohenlimburg');
+  }
+  document.getElementById('startBtn').addEventListener('click', function(){
+    var v = document.getElementById('nameInput').value.trim();
+    if (!v || !selectedOnboardG) return;
+    try { localStorage.setItem('dp_name', v); localStorage.setItem('dp_gemeinde', selectedOnboardG); } catch(e){}
+    initPerson(v, selectedOnboardG);
+  });
+  document.getElementById('nameInput').addEventListener('keydown', function(e){ if (e.key==='Enter') document.getElementById('startBtn').click(); });
+  document.getElementById('switchBtn').addEventListener('click', function(){
+    try { localStorage.removeItem('dp_name'); localStorage.removeItem('dp_gemeinde'); } catch(e){}
+    myName = null; mySlug = null; myGemeinde = null; selectedOnboardG = null;
+    document.getElementById('nameInput').value = '';
+    selectG(null);
+    showOnboarding();
+  });
+
+  document.querySelectorAll('.tab-btn').forEach(function(btn){
+    btn.addEventListener('click', function(){
+      document.querySelectorAll('.tab-btn').forEach(function(b){ b.classList.remove('active'); });
+      btn.classList.add('active');
+      document.querySelectorAll('.view').forEach(function(v){ v.classList.remove('active'); });
+      activeTab = btn.dataset.tab;
+      document.getElementById('view-' + activeTab).classList.add('active');
+      if (activeTab === 'admin') renderAdmin();
+      if (activeTab === 'uebersicht') renderUebersicht();
+    });
+  });
+  document.querySelectorAll('#uebFilter button').forEach(function(btn){
+    btn.addEventListener('click', function(){
+      document.querySelectorAll('#uebFilter button').forEach(function(b){ b.classList.remove('active'); });
+      btn.classList.add('active');
+      uebFilter = btn.dataset.f;
+      renderUebersicht();
+    });
+  });
+
+  // ---------- data ----------
+  function initPerson(name, gemeinde){
+    myName = name; mySlug = slugify(name); myGemeinde = gemeinde;
+    showApp();
+    if (!db) return;
+    db.collection('amtstraeger').doc(mySlug).get().then(function(snap){
+      if (!snap.exists) {
+        db.collection('amtstraeger').doc(mySlug).set({ name: myName, gemeinde: myGemeinde, createdAt: new Date().toISOString() }).catch(function(){});
+      } else {
+        var data = snap.data();
+        if (data && data.gemeinde !== myGemeinde) {
+          db.collection('amtstraeger').doc(mySlug).update({ gemeinde: myGemeinde }).catch(function(){});
+        }
+      }
+    }).catch(function(){});
+    renderMeine();
+  }
+
+  function subscribeAll(){
+    db.collection('termine').onSnapshot(function(snap){
+      termine = snap.docs.map(function(d){ return Object.assign({ id: d.id }, d.data()); });
+      termine.sort(sortByDatumZeit);
+      renderMeine(); renderUebersicht(); renderAdmin();
+    }, function(){});
+    db.collection('amtstraeger').onSnapshot(function(snap){
+      amtstraeger = snap.docs.map(function(d){ return Object.assign({ id: d.id }, d.data()); });
+      amtstraeger.sort(function(a,b){ return (a.name||'').localeCompare(b.name||'', 'de'); });
+      renderSuggestions(); renderUebersicht(); renderAdmin();
+    }, function(){});
+    db.collection('status').onSnapshot(function(snap){
+      statusList = snap.docs.map(function(d){ return Object.assign({ id: d.id }, d.data()); });
+      renderMeine(); renderUebersicht();
+    }, function(){});
+  }
+
+  function renderSuggestions(){
+    var box = document.getElementById('suggestions');
+    box.innerHTML = '';
+    amtstraeger.slice(0,10).forEach(function(g){
+      var chip = document.createElement('button');
+      chip.type = 'button'; chip.className = 'sugg-chip';
+      chip.textContent = g.name + ' · ' + (GEMEINDEN[g.gemeinde]||'');
+      chip.addEventListener('click', function(){
+        document.getElementById('nameInput').value = g.name;
+        selectG(g.gemeinde);
+      });
+      box.appendChild(chip);
+    });
+  }
+
+  function myStatus(terminId){
+    var docId = terminId + '__' + mySlug;
+    var f = statusList.find(function(s){ return s.id === docId; });
+    return f ? f.status : 'offen';
+  }
+  function setMyStatus(terminId, status){
+    if (!db) return;
+    var docId = terminId + '__' + mySlug;
+    db.collection('status').doc(docId).set({
+      terminId: terminId, amtstraegerId: mySlug, name: myName, gemeinde: myGemeinde,
+      status: status, updatedAt: new Date().toISOString()
+    }).catch(function(){});
+  }
+
+  function tagHtml(t){
+    if (t.gemeinsam) return '<span class="tag gemeinsam">Gemeinsam</span>';
+    return '<span class="tag ' + t.gemeinde + '">' + (GEMEINDEN[t.gemeinde]||'') + '</span>';
+  }
+
+  function renderMeine(){
+    var el = document.getElementById('meineList');
+    if (!myName) return;
+    var today = new Date().toISOString().slice(0,10);
+    var relevant = termine.filter(function(t){
+      return (t.datum||'') >= today && (t.gemeinsam || t.gemeinde === myGemeinde);
+    });
+    if (!relevant.length) {
+      el.innerHTML = '<div class="empty">Keine anstehenden Termine für deine Gemeinde.</div>';
+      return;
+    }
+    el.innerHTML = '';
+    relevant.forEach(function(t){
+      var f = fmtDatum(t.datum);
+      var st = myStatus(t.id);
+      var card = document.createElement('div');
+      card.className = 'card';
+      card.innerHTML =
+        tagHtml(t) +
+        '<p class="termin-date">' + f.tag + ', ' + f.datum + (t.uhrzeit ? ' · ' + t.uhrzeit + ' Uhr' : '') + '</p>' +
+        '<p class="termin-sub">' + escapeHtml(t.bezeichnung || 'Gottesdienst') + '</p>' +
+        '<div class="status-row">' +
+          '<button class="status-btn sb-anwesend' + (st==='anwesend'?' sel-anwesend':'') + '">Anwesend</button>' +
+          '<button class="status-btn sb-abwesend' + (st==='abwesend'?' sel-abwesend':'') + '">Abwesend</button>' +
+          '<button class="status-btn sb-offen' + (st==='offen'?' sel-offen':'') + '">Offen</button>' +
+        '</div>';
+      card.querySelector('.sb-anwesend').addEventListener('click', function(){ setMyStatus(t.id, 'anwesend'); });
+      card.querySelector('.sb-abwesend').addEventListener('click', function(){ setMyStatus(t.id, 'abwesend'); });
+      card.querySelector('.sb-offen').addEventListener('click', function(){ setMyStatus(t.id, 'offen'); });
+      el.appendChild(card);
+    });
+  }
+
+  function statusOf(terminId, amtstraegerId){
+    var docId = terminId + '__' + amtstraegerId;
+    var f = statusList.find(function(s){ return s.id === docId; });
+    return f ? f.status : 'offen';
+  }
+  var STATUS_SYMBOL = { anwesend:'✓', abwesend:'✕', offen:'–' };
+
+  function renderUebersicht(){
+    var el = document.getElementById('uebersichtWrap');
+    var rows, cols;
+    if (uebFilter === 'gemeinsam') {
+      rows = termine.filter(function(t){ return t.gemeinsam; });
+      cols = amtstraeger.slice();
+    } else {
+      rows = termine.filter(function(t){ return !t.gemeinsam && t.gemeinde === uebFilter; });
+      cols = amtstraeger.filter(function(a){ return a.gemeinde === uebFilter; });
+    }
+    if (!rows.length || !cols.length) {
+      el.innerHTML = '<div class="empty">Noch keine Daten für diese Auswahl.</div>';
+      return;
+    }
+    var html = '<div class="matrix-scroll"><table class="matrix"><thead><tr><th>Termin</th>';
+    cols.forEach(function(g){
+      html += '<th class="namecol">' + escapeHtml(g.name) + (uebFilter==='gemeinsam' ? '<br><span style="font-weight:400;">'+(GEMEINDEN[g.gemeinde]||'')+'</span>' : '') + '</th>';
+    });
+    html += '</tr></thead><tbody>';
+    rows.forEach(function(t){
+      var f = fmtDatum(t.datum);
+      html += '<tr><td class="datecell">' + f.tag.slice(0,2) + ', ' + f.datum + (t.uhrzeit?' '+t.uhrzeit:'') + '<span class="sub">' + escapeHtml(t.bezeichnung||'') + '</span></td>';
+      cols.forEach(function(g){
+        var st = statusOf(t.id, g.id);
+        html += '<td><span class="badge ' + st + '">' + STATUS_SYMBOL[st] + '</span></td>';
+      });
+      html += '</tr>';
+    });
+    html += '</tbody></table></div>';
+    el.innerHTML = html;
+  }
+
+  // ---------- admin ----------
+  var adminUnlocked = false;
+  try { adminUnlocked = sessionStorage.getItem('dp_admin_ok') === '1'; } catch(e){}
+
+  function renderAdmin(){
+    var el = document.getElementById('adminWrap');
+    if (!db) { el.innerHTML = '<div class="empty">Firebase ist noch nicht eingerichtet.</div>'; return; }
+
+    if (!adminUnlocked) {
+      el.innerHTML =
+        '<div class="card">' +
+        '<p class="section-title">Admin-Bereich</p>' +
+        '<p class="termin-sub">Zum Verwalten von Terminen bitte den Zugangscode eingeben.</p>' +
+        '<label for="pinInput">Zugangscode</label>' +
+        '<input type="password" id="pinInput" inputmode="numeric" placeholder="Code">' +
+        '<div id="pinError" class="error-msg" style="display:none;"></div>' +
+        '<button class="btn-primary" id="pinSubmit">Bestätigen</button>' +
+        '</div>';
+      document.getElementById('pinSubmit').addEventListener('click', tryPin);
+      document.getElementById('pinInput').addEventListener('keydown', function(e){ if (e.key==='Enter') tryPin(); });
+      return;
+    }
+
+    var html = '';
+
+    html += '<div class="card">' +
+      '<p class="section-title">Serientermine für einen Monat</p>' +
+      '<p class="termin-sub">Erstellt für jeden Mittwoch einen gemeinsamen Termin (19:30) und für jeden Sonntag je einen Termin pro Gemeinde (10:00). Bereits vorhandene Termine am selben Tag werden nicht doppelt angelegt.</p>' +
+      '<label for="serMonth">Monat</label>' +
+      '<input type="month" id="serMonth">' +
+      '<button class="btn-primary" id="serSubmit">Serie erstellen</button>' +
+      '<div id="serMsg" class="hint" style="display:none;"></div>' +
+      '</div>';
+
+    html += '<div class="card">' +
+      '<p class="section-title">Einzelnen Termin anlegen</p>' +
+      '<label for="admDatum">Datum</label>' +
+      '<input type="date" id="admDatum">' +
+      '<label for="admZeit">Uhrzeit</label>' +
+      '<input type="time" id="admZeit" value="10:00">' +
+      '<label for="admBez">Bezeichnung</label>' +
+      '<input type="text" id="admBez" placeholder="z. B. Sonntagsgottesdienst">' +
+      '<div class="checkline"><input type="checkbox" id="admGemeinsam"><label for="admGemeinsam" style="margin:0;">Gemeinsamer Termin (beide Gemeinden)</label></div>' +
+      '<div id="admGemeindeWrap"><label for="admGemeinde">Gemeinde</label>' +
+      '<select id="admGemeinde"><option value="boele">Boele</option><option value="hohenlimburg">Hohenlimburg</option></select></div>' +
+      '<button class="btn-primary" id="admSubmit">Termin anlegen</button>' +
+      '<div id="admError" class="error-msg" style="display:none;"></div>' +
+      '</div>';
+
+    html += '<div class="card"><p class="section-title">Amtsträger</p><div id="amList"></div></div>';
+
+    html += '<div class="card"><p class="section-title">Bestehende Termine</p><div id="admList"></div></div>';
+
+    el.innerHTML = html;
+
+    document.getElementById('admGemeinsam').addEventListener('change', function(){
+      document.getElementById('admGemeindeWrap').style.display = this.checked ? 'none' : 'block';
+    });
+
+    document.getElementById('serSubmit').addEventListener('click', createSeries);
+    document.getElementById('admSubmit').addEventListener('click', createSingle);
+
+    renderAmtstraegerList();
+    renderTermineList();
+  }
+
+  function tryPin(){
+    var val = document.getElementById('pinInput').value.trim();
+    var err = document.getElementById('pinError');
+    if (!val) return;
+    db.doc('config/admin').get().then(function(snap){
+      if (!snap.exists) {
+        db.doc('config/admin').set({ pin: val }).then(function(){
+          adminUnlocked = true; try { sessionStorage.setItem('dp_admin_ok','1'); } catch(e){}
+          renderAdmin();
+        });
+        return;
+      }
+      var data = snap.data();
+      if (data && data.pin === val) {
+        adminUnlocked = true; try { sessionStorage.setItem('dp_admin_ok','1'); } catch(e){}
+        renderAdmin();
+      } else {
+        err.textContent = 'Code ist nicht korrekt.'; err.style.display = 'block';
+      }
+    }).catch(function(){
+      err.textContent = 'Verbindung fehlgeschlagen. Bitte erneut versuchen.'; err.style.display = 'block';
+    });
+  }
+
+  function existsTermin(datum, gemeinde, gemeinsam){
+    return termine.some(function(t){
+      return t.datum === datum && !!t.gemeinsam === !!gemeinsam && (gemeinsam || t.gemeinde === gemeinde);
+    });
+  }
+
+  function createSeries(){
+    var monthVal = document.getElementById('serMonth').value;
+    var msg = document.getElementById('serMsg');
+    if (!monthVal) { msg.textContent = 'Bitte einen Monat wählen.'; msg.style.display='block'; return; }
+    var parts = monthVal.split('-');
+    var year = parseInt(parts[0],10), month = parseInt(parts[1],10);
+    var seriesId = monthVal + '-serie';
+    var toCreate = [];
+    var d = new Date(year, month-1, 1);
+    while (d.getMonth() === month-1) {
+      var iso = d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0');
+      var wd = d.getDay();
+      if (wd === 3) {
+        if (!existsTermin(iso, null, true)) {
+          toCreate.push({ datum: iso, uhrzeit:'19:30', bezeichnung:'Mittwochsgottesdienst', gemeinsam:true, gemeinde:null, seriesId: seriesId });
+        }
+      } else if (wd === 0) {
+        ['boele','hohenlimburg'].forEach(function(g){
+          if (!existsTermin(iso, g, false)) {
+            toCreate.push({ datum: iso, uhrzeit:'10:00', bezeichnung:'Sonntagsgottesdienst', gemeinsam:false, gemeinde:g, seriesId: seriesId });
+          }
+        });
+      }
+      d.setDate(d.getDate()+1);
+    }
+    if (!toCreate.length) {
+      msg.textContent = 'Für diesen Monat sind bereits alle Termine vorhanden.'; msg.style.display = 'block';
+      return;
+    }
+    var now = new Date().toISOString();
+    var promises = toCreate.map(function(t){
+      t.createdAt = now;
+      return db.collection('termine').add(t);
+    });
+    Promise.all(promises).then(function(){
+      msg.textContent = toCreate.length + ' Termin(e) wurden angelegt.'; msg.style.display = 'block';
+    }).catch(function(){
+      msg.textContent = 'Beim Anlegen ist ein Fehler aufgetreten.'; msg.style.display = 'block';
+    });
+  }
+
+  function createSingle(){
+    var datum = document.getElementById('admDatum').value;
+    var uhrzeit = document.getElementById('admZeit').value;
+    var bez = document.getElementById('admBez').value.trim();
+    var gemeinsam = document.getElementById('admGemeinsam').checked;
+    var gemeinde = document.getElementById('admGemeinde').value;
+    var err = document.getElementById('admError');
+    if (!datum) { err.textContent = 'Bitte ein Datum wählen.'; err.style.display='block'; return; }
+    err.style.display = 'none';
+    db.collection('termine').add({
+      datum: datum, uhrzeit: uhrzeit || '', bezeichnung: bez || 'Gottesdienst',
+      gemeinsam: gemeinsam, gemeinde: gemeinsam ? null : gemeinde,
+      seriesId: null, createdAt: new Date().toISOString()
+    }).then(function(){
+      document.getElementById('admDatum').value = '';
+      document.getElementById('admBez').value = '';
+    }).catch(function(){
+      err.textContent = 'Termin konnte nicht gespeichert werden.'; err.style.display = 'block';
+    });
+  }
+
+  function renderTermineList(){
+    var list = document.getElementById('admList');
+    if (!list) return;
+    if (!termine.length) { list.innerHTML = '<div class="empty" style="padding:16px 0;">Noch keine Termine.</div>'; return; }
+    list.innerHTML = '';
+    termine.slice().sort(sortByDatumZeit).forEach(function(t){
+      var f = fmtDatum(t.datum);
+      var row = document.createElement('div');
+      row.className = 'termin-admin-row';
+      row.innerHTML =
+        '<div class="top-line">' +
+          '<div class="info">' + tagHtml(t) + '<br>' + f.tag + ', ' + f.datum + (t.uhrzeit?' · '+t.uhrzeit:'') + '<span class="sub">' + escapeHtml(t.bezeichnung||'') + '</span></div>' +
+          '<div class="row-actions"><button class="btn-secondary editBtn">Bearbeiten</button><button class="btn-secondary btn-danger delBtn">Löschen</button></div>' +
+        '</div><div class="edit-box" style="display:none;"></div>';
+      row.querySelector('.delBtn').addEventListener('click', function(){
+        db.collection('termine').doc(t.id).delete().catch(function(){});
+        db.collection('status').where('terminId','==', t.id).get().then(function(snap){
+          snap.docs.forEach(function(d){ db.collection('status').doc(d.id).delete().catch(function(){}); });
+        }).catch(function(){});
+      });
+      row.querySelector('.editBtn').addEventListener('click', function(){
+        var box = row.querySelector('.edit-box');
+        var open = box.style.display !== 'none';
+        if (open) { box.style.display = 'none'; box.innerHTML=''; return; }
+        box.style.display = 'block';
+        box.innerHTML =
+          '<label>Datum</label><input type="date" class="e-datum" value="' + (t.datum||'') + '">' +
+          '<label>Uhrzeit</label><input type="time" class="e-zeit" value="' + (t.uhrzeit||'') + '">' +
+          '<label>Bezeichnung</label><input type="text" class="e-bez" value="' + escapeHtml(t.bezeichnung||'') + '">' +
+          '<div class="checkline"><input type="checkbox" class="e-gemeinsam"' + (t.gemeinsam?' checked':'') + '><label style="margin:0;">Gemeinsamer Termin</label></div>' +
+          '<div class="e-gwrap" style="display:' + (t.gemeinsam ? 'none' : 'block') + ';"><label>Gemeinde</label>' +
+          '<select class="e-gemeinde"><option value="boele"' + (t.gemeinde==='boele'?' selected':'') + '>Boele</option>' +
+          '<option value="hohenlimburg"' + (t.gemeinde==='hohenlimburg'?' selected':'') + '>Hohenlimburg</option></select></div>' +
+          '<button class="btn-primary e-save">Speichern</button>';
+        box.querySelector('.e-gemeinsam').addEventListener('change', function(){
+          box.querySelector('.e-gwrap').style.display = this.checked ? 'none' : 'block';
+        });
+        box.querySelector('.e-save').addEventListener('click', function(){
+          var gem = box.querySelector('.e-gemeinsam').checked;
+          db.collection('termine').doc(t.id).update({
+            datum: box.querySelector('.e-datum').value,
+            uhrzeit: box.querySelector('.e-zeit').value,
+            bezeichnung: box.querySelector('.e-bez').value.trim() || 'Gottesdienst',
+            gemeinsam: gem,
+            gemeinde: gem ? null : box.querySelector('.e-gemeinde').value,
+            updatedAt: new Date().toISOString()
+          }).then(function(){ box.style.display='none'; box.innerHTML=''; }).catch(function(){});
+        });
+      });
+      list.appendChild(row);
+    });
+  }
+
+  function renderAmtstraegerList(){
+    var list = document.getElementById('amList');
+    if (!list) return;
+    if (!amtstraeger.length) { list.innerHTML = '<div class="empty" style="padding:16px 0;">Noch niemand eingetragen.</div>'; return; }
+    list.innerHTML = '';
+    amtstraeger.forEach(function(g){
+      var row = document.createElement('div');
+      row.className = 'am-row';
+      row.innerHTML = '<span>' + escapeHtml(g.name) + '</span>';
+      var right = document.createElement('span');
+      right.style.display = 'flex'; right.style.gap = '6px'; right.style.alignItems = 'center';
+      var sel = document.createElement('select');
+      sel.innerHTML = '<option value="boele">Boele</option><option value="hohenlimburg">Hohenlimburg</option>';
+      sel.value = g.gemeinde;
+      sel.addEventListener('change', function(){
+        db.collection('amtstraeger').doc(g.id).update({ gemeinde: sel.value }).catch(function(){});
+      });
+      var del = document.createElement('button');
+      del.className = 'btn-secondary btn-danger'; del.textContent = 'Entfernen';
+      del.addEventListener('click', function(){
+        db.collection('amtstraeger').doc(g.id).delete().catch(function(){});
+      });
+      right.appendChild(sel); right.appendChild(del);
+      row.appendChild(right);
+      list.appendChild(row);
+    });
+  }
+
+  // ---------- boot ----------
+  function boot(){
+    if (db) subscribeAll();
+    if (savedName && savedGemeinde) { initPerson(savedName, savedGemeinde); }
+    else { selectG(null); showOnboarding(); }
+  }
+  boot();
+})();
+</script>
+</body>
+</html>
