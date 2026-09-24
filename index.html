@@ -135,7 +135,7 @@
   <div class="onb-box">
     <p class="place" style="margin-bottom:6px;">Dienstplan Amtsträger</p>
     <h1>Wer bist du?</h1>
-    <p>Trage deinen Namen ein und wähle deine Gemeinde sowie deine Rolle, um Gottesdienste als anwesend oder abwesend zu markieren.</p>
+    <p>Trage deinen Namen ein und wähle deine Gemeinde sowie dein Amt, um Gottesdienste als anwesend oder abwesend zu markieren.</p>
     <label for="nameInput">Name</label>
     <input type="text" id="nameInput" placeholder="Vor- und Nachname" autocomplete="name">
     <div id="suggestions"></div>
@@ -144,10 +144,10 @@
       <button type="button" id="gBoele" data-g="boele">Boele</button>
       <button type="button" id="gHohenlimburg" data-g="hohenlimburg">Hohenlimburg</button>
     </div>
-    <label>Rolle</label>
+    <label>Amt</label>
     <div class="gcard">
-      <button type="button" id="rDiakon" data-r="diakon">DiakonIn</button>
-      <button type="button" id="rPriester" data-r="priester">PriesterIn</button>
+      <button type="button" id="rDiakon" data-r="diakon">Diakon</button>
+      <button type="button" id="rPriester" data-r="priester">Priester</button>
     </div>
     <button class="btn-primary" id="startBtn">Loslegen</button>
   </div>
@@ -218,7 +218,7 @@
   }
 
   var GEMEINDEN = { boele: 'Boele', hohenlimburg: 'Hohenlimburg' };
-  var ROLLEN = { diakon: 'DiakonIn', priester: 'PriesterIn' };
+  var ROLLEN = { diakon: 'Diakon', priester: 'Priester' };
 
   var myName = null, mySlug = null, myGemeinde = null, myRolle = null;
   var termine = [];
@@ -823,7 +823,7 @@
         db.collection('amtstraeger').doc(g.id).update({ gemeinde: selG.value }).catch(function(){});
       });
       var selR = document.createElement('select');
-      selR.innerHTML = '<option value="diakon">DiakonIn</option><option value="priester">PriesterIn</option>';
+      selR.innerHTML = '<option value="diakon">Diakon</option><option value="priester">Priester</option>';
       selR.value = g.rolle || 'diakon';
       selR.addEventListener('change', function(){
         db.collection('amtstraeger').doc(g.id).update({ rolle: selR.value }).catch(function(){});
