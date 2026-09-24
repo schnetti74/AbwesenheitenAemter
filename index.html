@@ -562,6 +562,7 @@
     renderMeinUrlaubBox();
   }
 
+  var urlaubBoxOpen = false;
   function renderMeinUrlaubBox(){
     var box = document.getElementById('urlaubMeinBox');
     if (!box || !myName) return;
@@ -574,15 +575,26 @@
         '<button class="btn-secondary btn-danger" data-id="' + u.id + '">Löschen</button>' +
         '</div></div>';
     });
-    box.innerHTML = '<div class="card">' +
-      '<p class="section-title">Meine Urlaubstage</p>' +
-      '<p class="termin-sub">Wird automatisch bei „Meine Termine" und in der Übersicht als Abwesend berücksichtigt – auch für Termine, die noch nicht angelegt sind.</p>' +
-      '<label for="urlVon">Von</label><input type="date" id="urlVon">' +
-      '<label for="urlBis">Bis</label><input type="date" id="urlBis">' +
-      '<div id="urlError" class="error-msg" style="display:none;"></div>' +
-      '<button class="btn-primary" id="urlAddBtn">Hinzufügen</button>' +
-      '<div style="margin-top:10px;">' + listHtml + '</div>' +
-      '</div>';
+    var countHint = list.length ? (list.length + ' eingetragen') : 'keine eingetragen';
+    box.innerHTML = '<div class="card ueb-card">' +
+      '<div class="ueb-head" id="urlaubBoxHead">' +
+        '<p class="section-title" style="margin-bottom:2px;">Meine Urlaubstage</p>' +
+        '<p class="hint" style="margin:0;">' + countHint + '</p>' +
+        '<span class="ueb-toggle">' + (urlaubBoxOpen ? 'Einklappen ▴' : 'Aufklappen ▾') + '</span>' +
+      '</div>' +
+      '<div class="ueb-persons" id="urlaubBoxBody" style="display:' + (urlaubBoxOpen ? 'block' : 'none') + ';">' +
+        '<p class="termin-sub" style="margin-top:10px;">Wird automatisch bei „Meine Termine" und in der Übersicht als Abwesend berücksichtigt – auch für Termine, die noch nicht angelegt sind.</p>' +
+        '<label for="urlVon">Von</label><input type="date" id="urlVon">' +
+        '<label for="urlBis">Bis</label><input type="date" id="urlBis">' +
+        '<div id="urlError" class="error-msg" style="display:none;"></div>' +
+        '<button class="btn-primary" id="urlAddBtn">Hinzufügen</button>' +
+        '<div style="margin-top:10px;">' + listHtml + '</div>' +
+      '</div>' +
+    '</div>';
+    box.querySelector('#urlaubBoxHead').addEventListener('click', function(){
+      urlaubBoxOpen = !urlaubBoxOpen;
+      renderMeinUrlaubBox();
+    });
     box.querySelector('#urlAddBtn').addEventListener('click', function(){
       var von = box.querySelector('#urlVon').value;
       var bis = box.querySelector('#urlBis').value;
