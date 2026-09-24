@@ -119,8 +119,7 @@
   .onb-box { max-width:420px; margin:0 auto; width:100%; }
   .onb-box h1 { font-size:1.6rem; margin-bottom:8px; }
   .onb-box p { color:var(--ink-soft); font-size:0.92rem; line-height:1.5; }
-  #suggestions { display:flex; flex-wrap:wrap; gap:6px; margin-top:8px; }
-  .sugg-chip { background:var(--bg-alt); border:1px solid var(--border); color:var(--ink-soft); padding:5px 10px; border-radius:20px; font-size:0.78rem; cursor:pointer; font-family:inherit; }
+  #onbPinWrap { margin-top: 4px; }
   .gcard { display:flex; gap:8px; margin-top:6px; }
   .gcard button { flex:1; padding:12px 6px; border-radius:9px; border:1px solid var(--border); background:var(--bg-alt); color:var(--ink); font-family:inherit; font-weight:600; font-size:0.9rem; cursor:pointer; }
   .gcard button.sel { background:var(--ink); color:var(--bg); border-color:var(--ink); }
@@ -138,7 +137,6 @@
     <p>Trage deinen Namen ein und wähle deine Gemeinde sowie dein Amt, um Gottesdienste als anwesend oder abwesend zu markieren.</p>
     <label for="nameInput">Name</label>
     <input type="text" id="nameInput" placeholder="Vor- und Nachname" autocomplete="name">
-    <div id="suggestions"></div>
     <label>Gemeinde</label>
     <div class="gcard">
       <button type="button" id="gBoele" data-g="boele">Boele</button>
@@ -148,6 +146,16 @@
     <div class="gcard">
       <button type="button" id="rDiakon" data-r="diakon">Diakon</button>
       <button type="button" id="rPriester" data-r="priester">Priester</button>
+    </div>
+    <label>Administrator</label>
+    <div class="gcard">
+      <button type="button" id="aJa" data-a="ja">Ja</button>
+      <button type="button" id="aNein" data-a="nein">Nein</button>
+    </div>
+    <div id="onbPinWrap" style="display:none;">
+      <label for="onbAdminPin">Admin-Zugangscode</label>
+      <input type="password" id="onbAdminPin" inputmode="numeric" placeholder="Code">
+      <div id="onbPinError" class="error-msg" style="display:none;"></div>
     </div>
     <button class="btn-primary" id="startBtn">Loslegen</button>
   </div>
@@ -228,6 +236,8 @@
   var uebFilter = 'boele';
   var selectedOnboardG = null;
   var selectedOnboardR = null;
+  var selectedOnboardA = 'nein';
+  var adminUnlocked = false;
 
   function slugify(s){
     return (s||'').trim().toLowerCase()
@@ -265,8 +275,8 @@
   }
 
   // ---------- onboarding ----------
-  var savedName = null, savedGemeinde = null, savedRolle = null;
-  try { savedName = localStorage.getItem('dp_name'); savedGemeinde = localStorage.getItem('dp_gemeinde'); savedRolle = localStorage.getItem('dp_rolle'); } catch(e){}
+  var savedName = null, savedGemeinde = null, savedRolle = null, savedIsAdmin = null;
+  try { savedName = localStorage.getItem('dp_name'); savedGemeinde = localStorage.getItem('dp_gemeinde'); savedRolle = localStorage.getItem('dp_rolle'); savedIsAdmin = localStorage.getItem('dp_isadmin'); } catch(e){}
 
   function showOnboarding(){
     document.getElementById('onboarding').style.display = 'flex';
@@ -282,6 +292,8 @@
     var wr = document.getElementById('whoRolle');
     wr.textContent = ROLLEN[myRolle] || '';
     wr.className = 'tag gemeinsam';
+    var termineTabBtn = document.querySelector('.tab-btn[data-tab="admin"]');
+    if (termineTabBtn) termineTabBtn.style.display = adminUnlocked ? '' : 'none';
     buildUebFilter();
   }
 
@@ -299,23 +311,65 @@
     document.getElementById('rDiakon').classList.toggle('sel', r==='diakon');
     document.getElementById('rPriester').classList.toggle('sel', r==='priester');
   }
-  document.getElementById('startBtn').addEventListener('click', function(){
-    var v = document.getElementById('nameInput').value.trim();
-    if (!v || !selectedOnboardG || !selectedOnboardR) return;
+  document.getElementById('aJa').addEventListener('click', function(){ selectA('ja'); });
+  document.getElementById('aNein').addEventListener('click', function(){ selectA('nein'); });
+  function selectA(a){
+    selectedOnboardA = a;
+    document.getElementById('aJa').classList.toggle('sel', a==='ja');
+    document.getElementById('aNein').classList.toggle('sel', a==='nein');
+    document.getElementById('onbPinWrap').style.display = (a==='ja') ? 'block' : 'none';
+    document.getElementById('onbPinError').style.display = 'none';
+  }
+  function verifyOrSetAdminPin(pin, callback){
+    if (!db) { callback(false); return; }
+    db.doc('config/admin').get().then(function(snap){
+      if (!snap.exists) {
+        db.doc('config/admin').set({ pin: pin }).then(function(){ callback(true); }).catch(function(){ callback(false); });
+        return;
+      }
+      var data = snap.data();
+      callback(!!(data && data.pin === pin));
+    }).catch(function(){ callback(false); });
+  }
+  function finishOnboarding(v, isAdmin){
     try {
       localStorage.setItem('dp_name', v);
       localStorage.setItem('dp_gemeinde', selectedOnboardG);
       localStorage.setItem('dp_rolle', selectedOnboardR);
+      localStorage.setItem('dp_isadmin', isAdmin ? '1' : '0');
     } catch(e){}
+    adminUnlocked = isAdmin;
     initPerson(v, selectedOnboardG, selectedOnboardR);
+  }
+  document.getElementById('startBtn').addEventListener('click', function(){
+    var v = document.getElementById('nameInput').value.trim();
+    if (!v || !selectedOnboardG || !selectedOnboardR) return;
+    if (selectedOnboardA === 'ja') {
+      var pin = document.getElementById('onbAdminPin').value.trim();
+      var perr = document.getElementById('onbPinError');
+      if (!pin) { perr.textContent = 'Bitte einen Zugangscode eingeben.'; perr.style.display = 'block'; return; }
+      perr.style.display = 'none';
+      verifyOrSetAdminPin(pin, function(ok){
+        if (!ok) { perr.textContent = 'Code ist nicht korrekt.'; perr.style.display = 'block'; return; }
+        finishOnboarding(v, true);
+      });
+    } else {
+      finishOnboarding(v, false);
+    }
   });
   document.getElementById('nameInput').addEventListener('keydown', function(e){ if (e.key==='Enter') document.getElementById('startBtn').click(); });
   document.getElementById('switchBtn').addEventListener('click', function(){
-    try { localStorage.removeItem('dp_name'); localStorage.removeItem('dp_gemeinde'); localStorage.removeItem('dp_rolle'); } catch(e){}
-    myName = null; mySlug = null; myGemeinde = null; myRolle = null; selectedOnboardG = null; selectedOnboardR = null;
+    try {
+      localStorage.removeItem('dp_name'); localStorage.removeItem('dp_gemeinde');
+      localStorage.removeItem('dp_rolle'); localStorage.removeItem('dp_isadmin');
+    } catch(e){}
+    myName = null; mySlug = null; myGemeinde = null; myRolle = null; adminUnlocked = false;
+    selectedOnboardG = null; selectedOnboardR = null;
     document.getElementById('nameInput').value = '';
+    document.getElementById('onbAdminPin').value = '';
     selectG(null);
     selectR(null);
+    selectA('nein');
     showOnboarding();
   });
 
@@ -360,28 +414,12 @@
     db.collection('amtstraeger').onSnapshot(function(snap){
       amtstraeger = snap.docs.map(function(d){ return Object.assign({ id: d.id }, d.data()); });
       amtstraeger.sort(function(a,b){ return (a.name||'').localeCompare(b.name||'', 'de'); });
-      renderSuggestions(); renderUebersicht(); renderAdmin();
+      renderUebersicht(); renderAdmin();
     }, function(){});
     db.collection('status').onSnapshot(function(snap){
       statusList = snap.docs.map(function(d){ return Object.assign({ id: d.id }, d.data()); });
       renderMeine(); renderUebersicht();
     }, function(){});
-  }
-
-  function renderSuggestions(){
-    var box = document.getElementById('suggestions');
-    box.innerHTML = '';
-    amtstraeger.slice(0,10).forEach(function(g){
-      var chip = document.createElement('button');
-      chip.type = 'button'; chip.className = 'sugg-chip';
-      chip.textContent = g.name + ' · ' + (GEMEINDEN[g.gemeinde]||'');
-      chip.addEventListener('click', function(){
-        document.getElementById('nameInput').value = g.name;
-        selectG(g.gemeinde);
-        selectR(g.rolle);
-      });
-      box.appendChild(chip);
-    });
   }
 
   function myStatus(terminId){
@@ -579,27 +617,10 @@
   }
 
   // ---------- admin ----------
-  var adminUnlocked = false;
-  try { adminUnlocked = sessionStorage.getItem('dp_admin_ok') === '1'; } catch(e){}
-
   function renderAdmin(){
     var el = document.getElementById('adminWrap');
     if (!db) { el.innerHTML = '<div class="empty">Firebase ist noch nicht eingerichtet.</div>'; return; }
-
-    if (!adminUnlocked) {
-      el.innerHTML =
-        '<div class="card">' +
-        '<p class="section-title">Admin-Bereich</p>' +
-        '<p class="termin-sub">Zum Verwalten von Terminen bitte den Zugangscode eingeben.</p>' +
-        '<label for="pinInput">Zugangscode</label>' +
-        '<input type="password" id="pinInput" inputmode="numeric" placeholder="Code">' +
-        '<div id="pinError" class="error-msg" style="display:none;"></div>' +
-        '<button class="btn-primary" id="pinSubmit">Bestätigen</button>' +
-        '</div>';
-      document.getElementById('pinSubmit').addEventListener('click', tryPin);
-      document.getElementById('pinInput').addEventListener('keydown', function(e){ if (e.key==='Enter') tryPin(); });
-      return;
-    }
+    if (!adminUnlocked) { el.innerHTML = '<div class="empty">Kein Zugriff.</div>'; return; }
 
     var html = '';
 
@@ -646,32 +667,6 @@
 
     renderAmtstraegerList();
     renderTermineList();
-  }
-
-  function tryPin(){
-    var val = document.getElementById('pinInput').value.trim();
-    var err = document.getElementById('pinError');
-    if (!val) return;
-    db.doc('config/admin').get().then(function(snap){
-      if (!snap.exists) {
-        db.doc('config/admin').set({ pin: val }).then(function(){
-          adminUnlocked = true; try { sessionStorage.setItem('dp_admin_ok','1'); } catch(e){}
-          buildUebFilter();
-          renderAdmin();
-        });
-        return;
-      }
-      var data = snap.data();
-      if (data && data.pin === val) {
-        adminUnlocked = true; try { sessionStorage.setItem('dp_admin_ok','1'); } catch(e){}
-        buildUebFilter();
-        renderAdmin();
-      } else {
-        err.textContent = 'Code ist nicht korrekt.'; err.style.display = 'block';
-      }
-    }).catch(function(){
-      err.textContent = 'Verbindung fehlgeschlagen. Bitte erneut versuchen.'; err.style.display = 'block';
-    });
   }
 
   function existsTermin(datum, gemeinde, gemeinsam){
@@ -842,8 +837,12 @@
   // ---------- boot ----------
   function boot(){
     if (db) subscribeAll();
-    if (savedName && savedGemeinde && savedRolle) { initPerson(savedName, savedGemeinde, savedRolle); }
-    else { selectG(null); selectR(null); showOnboarding(); }
+    if (savedName && savedGemeinde && savedRolle) {
+      adminUnlocked = savedIsAdmin === '1';
+      initPerson(savedName, savedGemeinde, savedRolle);
+    } else {
+      selectG(null); selectR(null); selectA('nein'); showOnboarding();
+    }
   }
   boot();
 })();
