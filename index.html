@@ -169,10 +169,6 @@
 
   <section class="view" id="view-uebersicht">
     <div class="filter-row" id="uebFilter"></div>
-    <div class="filter-row" id="uebView">
-      <button data-v="tabelle" class="active">Tabelle</button>
-      <button data-v="details">Details je Person</button>
-    </div>
     <div id="uebersichtWrap"></div>
   </section>
 
@@ -225,7 +221,6 @@
   var statusList = [];
   var activeTab = 'meine';
   var uebFilter = 'boele';
-  var uebView = 'tabelle';
   var selectedOnboardG = null;
   var selectedOnboardR = null;
 
@@ -328,14 +323,6 @@
       document.getElementById('view-' + activeTab).classList.add('active');
       if (activeTab === 'admin') renderAdmin();
       if (activeTab === 'uebersicht') { buildUebFilter(); renderUebersicht(); }
-    });
-  });
-  document.querySelectorAll('#uebView button').forEach(function(btn){
-    btn.addEventListener('click', function(){
-      document.querySelectorAll('#uebView button').forEach(function(b){ b.classList.remove('active'); });
-      btn.classList.add('active');
-      uebView = btn.dataset.v;
-      renderUebersicht();
     });
   });
   // ---------- data ----------
@@ -530,6 +517,21 @@
 
   var STATUS_LABEL = { anwesend:'Anwesend', abwesend:'Abwesend', offen:'Offen' };
 
+  function personListHtml(t, cols){
+    var html = '';
+    cols.forEach(function(g){
+      var st = statusOf(t.id, g.id);
+      var bem = bemerkungOf(t.id, g.id);
+      html += '<div class="person-row"><span class="badge ' + st + '">' + STATUS_SYMBOL[st] + '</span>' +
+        '<span class="person-name">' + escapeHtml(g.name) + ' <span class="hint" style="margin:0;">(' + (ROLLEN[g.rolle]||'') + ')</span></span>' +
+        '<span class="person-status">' + STATUS_LABEL[st] + '</span></div>';
+      if (bem) {
+        html += '<div class="person-bem">„' + escapeHtml(bem) + '"</div>';
+      }
+    });
+    return html;
+  }
+
   function renderUebersicht(){
     var el = document.getElementById('uebersichtWrap');
     var today = todayIso();
@@ -541,9 +543,9 @@
       el.innerHTML = '<div class="empty">Noch keine Daten für diese Auswahl.</div>';
       return;
     }
-    if (uebView === 'details') { renderUebersichtDetails(el, rows, cols); return; }
 
-    var html = '<div class="matrix-scroll"><table class="matrix"><thead><tr><th>Termin</th>';
+    var html = '<p class="hint" style="margin-bottom:8px;">Auf einen Termin tippen, um die Personenliste mit Status und Bemerkung zu sehen.</p>';
+    html += '<div class="matrix-scroll"><table class="matrix"><thead><tr><th>Termin</th>';
     cols.forEach(function(g){
       html += '<th class="namecol">' + escapeHtml(g.name) + '</th>';
     });
@@ -553,44 +555,27 @@
       var rc = countRoles(t.id, cols);
       var ortHint = (t.gemeinsam && t.ort) ? (' · in ' + (GEMEINDEN[t.ort]||'')) : '';
       var dlHint = t.dienstleiter ? (' · Dienstleiter: ' + escapeHtml(t.dienstleiter)) : '';
-      html += '<tr><td class="datecell">' + f.tag.slice(0,2) + ', ' + f.datum + (t.uhrzeit?' '+t.uhrzeit:'') +
+      html += '<tr class="termin-row" data-tid="' + t.id + '" style="cursor:pointer;"><td class="datecell">' + f.tag.slice(0,2) + ', ' + f.datum + (t.uhrzeit?' '+t.uhrzeit:'') +
         '<span class="sub">' + escapeHtml(t.bezeichnung||'') + ortHint + dlHint + '<br>' + rc.p + ' Priester, ' + rc.d + ' Diakone anwesend</span></td>';
       cols.forEach(function(g){
         var st = statusOf(t.id, g.id);
         var bem = bemerkungOf(t.id, g.id);
-        html += '<td><span class="badge ' + st + (bem ? ' has-bem' : '') + '"' + (bem ? (' title="' + escapeHtml(bem) + '"') : '') + '>' + STATUS_SYMBOL[st] + '</span></td>';
+        html += '<td><span class="badge ' + st + (bem ? ' has-bem' : '') + '">' + STATUS_SYMBOL[st] + '</span></td>';
       });
       html += '</tr>';
+      html += '<tr class="detail-row" data-tid-detail="' + t.id + '" style="display:none;"><td colspan="' + (cols.length+1) + '">' + personListHtml(t, cols) + '</td></tr>';
     });
     html += '</tbody></table></div>';
-    if (rows.some(function(t){ return cols.some(function(g){ return bemerkungOf(t.id, g.id); }); })) {
-      html += '<p class="hint">Ein Punkt am Symbol zeigt eine Bemerkung – Details in der Ansicht „Details je Person".</p>';
-    }
     el.innerHTML = html;
-  }
 
-  function renderUebersichtDetails(el, rows, cols){
-    var html = '';
-    rows.forEach(function(t){
-      var f = fmtDatum(t.datum);
-      var ortHint = (t.gemeinsam && t.ort) ? (' · in ' + (GEMEINDEN[t.ort]||'')) : '';
-      var dlHint = t.dienstleiter ? (' · Dienstleiter: ' + escapeHtml(t.dienstleiter)) : '';
-      html += '<div class="card">' + tagHtml(t) +
-        '<p class="termin-date">' + f.tag + ', ' + f.datum + (t.uhrzeit?' · '+t.uhrzeit+' Uhr':'') + '</p>' +
-        '<p class="termin-sub">' + escapeHtml(t.bezeichnung||'') + ortHint + dlHint + '</p>';
-      cols.forEach(function(g){
-        var st = statusOf(t.id, g.id);
-        var bem = bemerkungOf(t.id, g.id);
-        html += '<div class="person-row"><span class="badge ' + st + '">' + STATUS_SYMBOL[st] + '</span>' +
-          '<span class="person-name">' + escapeHtml(g.name) + ' <span class="hint" style="margin:0;">(' + (ROLLEN[g.rolle]||'') + ')</span></span>' +
-          '<span class="person-status">' + STATUS_LABEL[st] + '</span></div>';
-        if (bem) {
-          html += '<div class="person-bem">„' + escapeHtml(bem) + '"</div>';
-        }
+    el.querySelectorAll('.termin-row').forEach(function(row){
+      row.addEventListener('click', function(){
+        var tid = row.dataset.tid;
+        var detail = el.querySelector('.detail-row[data-tid-detail="' + tid + '"]');
+        if (!detail) return;
+        detail.style.display = (detail.style.display === 'none') ? 'table-row' : 'none';
       });
-      html += '</div>';
     });
-    el.innerHTML = html;
   }
 
   // ---------- admin ----------
