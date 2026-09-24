@@ -685,16 +685,25 @@
   }
   function isLeapYear(y){ return (y % 4 === 0 && y % 100 !== 0) || y % 400 === 0; }
 
-  function renderUrlaub(){
-    var el = document.getElementById('urlaubWrap');
-    if (!myGemeinde) return;
-    var year = new Date().getFullYear();
+  function relevantYears(cols){
+    var currentYear = new Date().getFullYear();
+    var ids = cols.map(function(c){ return c.id; });
+    var years = {};
+    years[currentYear] = true;
+    urlaubList.forEach(function(u){
+      if (ids.indexOf(u.amtstraegerId) === -1) return;
+      var vy = parseInt((u.von||'').slice(0,4), 10);
+      var by = parseInt((u.bis||'').slice(0,4), 10);
+      if (!vy || !by) return;
+      for (var y = vy; y <= by; y++) {
+        if (y >= currentYear) years[y] = true;
+      }
+    });
+    return Object.keys(years).map(Number).sort(function(a,b){ return a-b; });
+  }
+
+  function yearChartHtml(year, cols){
     var daysInYear = isLeapYear(year) ? 366 : 365;
-    var cols = amtstraeger.filter(function(a){ return a.gemeinde === urlFilter; });
-    if (!cols.length) {
-      el.innerHTML = '<div class="empty">Noch keine Amtsträger für diese Gemeinde eingetragen.</div>';
-      return;
-    }
     var yearStart = year + '-01-01', yearEnd = year + '-12-31';
 
     var monthLine = '<div class="ur-months">';
@@ -723,10 +732,26 @@
       '</div>';
     });
 
-    el.innerHTML = '<div class="card ur-chart">' +
+    return '<div class="card ur-chart">' +
       '<p class="section-title">Urlaub ' + year + ' · ' + (GEMEINDEN[urlFilter]||'') + '</p>' +
       monthLine + rows +
       '</div>';
+  }
+
+  function renderUrlaub(){
+    var el = document.getElementById('urlaubWrap');
+    if (!myGemeinde) return;
+    var cols = amtstraeger.filter(function(a){ return a.gemeinde === urlFilter; });
+    if (!cols.length) {
+      el.innerHTML = '<div class="empty">Noch keine Amtsträger für diese Gemeinde eingetragen.</div>';
+      return;
+    }
+    var years = relevantYears(cols);
+    var html = '';
+    years.forEach(function(y){
+      html += yearChartHtml(y, cols);
+    });
+    el.innerHTML = html;
   }
 
   function countRoles(t, cols){
@@ -747,8 +772,10 @@
     cols.forEach(function(g){
       var st = effectiveStatus(t, g.id);
       var bem = effektiveBemerkung(t, g.id);
+      var extra = ROLLEN[g.rolle] || '';
+      if (t.gemeinsam) extra += ' · ' + (GEMEINDEN[g.gemeinde] || '');
       html += '<div class="person-row"><span class="badge ' + st + '">' + STATUS_SYMBOL[st] + '</span>' +
-        '<span class="person-name">' + escapeHtml(g.name) + ' <span class="hint" style="margin:0;">(' + (ROLLEN[g.rolle]||'') + ')</span></span>' +
+        '<span class="person-name">' + escapeHtml(g.name) + ' <span class="hint" style="margin:0;">(' + extra + ')</span></span>' +
         '<span class="person-status">' + STATUS_LABEL[st] + '</span></div>';
       if (bem) {
         html += '<div class="person-bem">„' + escapeHtml(bem) + '"</div>';
@@ -764,6 +791,8 @@
       return (t.datum||'') >= today && ((t.gemeinsam) || (!t.gemeinsam && t.gemeinde === uebFilter));
     });
     var cols = amtstraeger.filter(function(a){ return a.gemeinde === uebFilter; });
+    var otherGemeinde = uebFilter === 'boele' ? 'hohenlimburg' : 'boele';
+    var otherCols = amtstraeger.filter(function(a){ return a.gemeinde === otherGemeinde; });
     if (!rows.length || !cols.length) {
       el.innerHTML = '<div class="empty">Noch keine Daten für diese Auswahl.</div>';
       return;
@@ -772,7 +801,8 @@
     var html = '';
     rows.forEach(function(t){
       var f = fmtDatum(t.datum);
-      var rc = countRoles(t, cols);
+      var rowCols = t.gemeinsam ? cols.concat(otherCols) : cols;
+      var rc = countRoles(t, rowCols);
       var dlHint = t.dienstleiter ? (' · Dienstleiter: ' + escapeHtml(t.dienstleiter)) : '';
       html += '<div class="card ueb-card">' +
         '<div class="ueb-head" data-tid="' + t.id + '">' +
@@ -781,7 +811,7 @@
           '<p class="termin-sub">' + escapeHtml(t.bezeichnung||'') + dlHint + '<br>' + rc.p + ' Priester, ' + rc.d + ' Diakone anwesend</p>' +
           '<span class="ueb-toggle">Personen anzeigen ▾</span>' +
         '</div>' +
-        '<div class="ueb-persons" style="display:none;">' + personListHtml(t, cols) + '</div>' +
+        '<div class="ueb-persons" style="display:none;">' + personListHtml(t, rowCols) + '</div>' +
       '</div>';
     });
     el.innerHTML = html;
