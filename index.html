@@ -88,6 +88,13 @@
   .person-name { flex:1; font-size:0.85rem; }
   .person-status { font-size:0.76rem; color:var(--ink-soft); }
   .person-bem { font-size:0.8rem; color:var(--ink-soft); font-style:italic; padding:0 0 7px 30px; }
+  .ur-chart { overflow-x:auto; }
+  .ur-months { display:flex; padding-left:98px; margin:10px 0 4px; min-width:340px; }
+  .ur-months span { flex:1; font-size:0.66rem; color:var(--ink-soft); }
+  .ur-row { display:flex; align-items:center; gap:8px; padding:6px 0; border-top:1px solid var(--border); min-width:340px; }
+  .ur-name { width:90px; flex-shrink:0; font-size:0.78rem; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .ur-track { position:relative; flex:1; height:18px; background:var(--bg-alt); border-radius:4px; }
+  .ur-bar { position:absolute; top:0; height:100%; background:var(--gold-strong); border-radius:4px; min-width:3px; }
   label { display:block; font-size:0.78rem; font-weight:600; color:var(--ink-soft); margin:12px 0 5px; }
   label:first-child { margin-top:0; }
   input[type=text], input[type=date], input[type=time], input[type=password], input[type=month], select {
@@ -172,17 +179,24 @@
     <nav class="tabs">
       <button class="tab-btn active" data-tab="meine">Meine Termine</button>
       <button class="tab-btn" data-tab="uebersicht">Übersicht</button>
+      <button class="tab-btn" data-tab="urlaub">Urlaub</button>
       <button class="tab-btn" data-tab="admin">Termine</button>
     </nav>
   </header>
 
   <section class="view active" id="view-meine">
+    <div id="urlaubMeinBox"></div>
     <div id="meineList"></div>
   </section>
 
   <section class="view" id="view-uebersicht">
     <div class="filter-row" id="uebFilter"></div>
     <div id="uebersichtWrap"></div>
+  </section>
+
+  <section class="view" id="view-urlaub">
+    <div class="filter-row" id="urlFilter"></div>
+    <div id="urlaubWrap"></div>
   </section>
 
   <section class="view" id="view-admin">
@@ -232,8 +246,10 @@
   var termine = [];
   var amtstraeger = [];
   var statusList = [];
+  var urlaubList = [];
   var activeTab = 'meine';
   var uebFilter = 'boele';
+  var urlFilter = 'boele';
   var selectedOnboardG = null;
   var selectedOnboardR = null;
   var selectedOnboardA = 'nein';
@@ -382,6 +398,7 @@
       document.getElementById('view-' + activeTab).classList.add('active');
       if (activeTab === 'admin') renderAdmin();
       if (activeTab === 'uebersicht') { buildUebFilter(); renderUebersicht(); }
+      if (activeTab === 'urlaub') { buildUrlFilter(); renderUrlaub(); }
     });
   });
   // ---------- data ----------
@@ -420,13 +437,13 @@
       statusList = snap.docs.map(function(d){ return Object.assign({ id: d.id }, d.data()); });
       renderMeine(); renderUebersicht();
     }, function(){});
+    db.collection('urlaub').onSnapshot(function(snap){
+      urlaubList = snap.docs.map(function(d){ return Object.assign({ id: d.id }, d.data()); });
+      urlaubList.sort(function(a,b){ return (a.von||'') < (b.von||'') ? -1 : 1; });
+      renderMeine(); renderUebersicht(); renderUrlaub();
+    }, function(){});
   }
 
-  function myStatus(terminId){
-    var docId = terminId + '__' + mySlug;
-    var f = statusList.find(function(s){ return s.id === docId; });
-    return f ? f.status : 'offen';
-  }
   function myBemerkung(terminId){
     var docId = terminId + '__' + mySlug;
     var f = statusList.find(function(s){ return s.id === docId; });
@@ -454,6 +471,44 @@
     return f && f.bemerkung ? f.bemerkung : '';
   }
 
+  // ---------- Urlaub ----------
+  function isOnUrlaub(amtstraegerId, datum){
+    return urlaubList.some(function(u){
+      return u.amtstraegerId === amtstraegerId && u.von <= datum && datum <= u.bis;
+    });
+  }
+  function hasExplicitStatus(terminId, amtstraegerId){
+    var docId = terminId + '__' + amtstraegerId;
+    return statusList.some(function(s){ return s.id === docId && s.status; });
+  }
+  function effectiveStatus(t, amtstraegerId){
+    var docId = t.id + '__' + amtstraegerId;
+    var f = statusList.find(function(s){ return s.id === docId; });
+    if (f && f.status) return f.status;
+    if (isOnUrlaub(amtstraegerId, t.datum)) return 'abwesend';
+    return 'offen';
+  }
+  function effektiveBemerkung(t, amtstraegerId){
+    var bem = bemerkungOf(t.id, amtstraegerId);
+    if (bem) return bem;
+    if (!hasExplicitStatus(t.id, amtstraegerId) && isOnUrlaub(amtstraegerId, t.datum)) return 'Urlaub';
+    return '';
+  }
+  function myUrlaub(){
+    return urlaubList.filter(function(u){ return u.amtstraegerId === mySlug; });
+  }
+  function addUrlaub(von, bis){
+    if (!db) return;
+    db.collection('urlaub').add({
+      amtstraegerId: mySlug, name: myName, gemeinde: myGemeinde,
+      von: von, bis: bis, createdAt: new Date().toISOString()
+    }).catch(function(){});
+  }
+  function deleteUrlaub(id){
+    if (!db) return;
+    db.collection('urlaub').doc(id).delete().catch(function(){});
+  }
+
   function tagHtml(t){
     if (t.gemeinsam) {
       var ortLabel = t.ort ? (' · in ' + (GEMEINDEN[t.ort]||'')) : '';
@@ -471,14 +526,17 @@
     });
     if (!relevant.length) {
       el.innerHTML = '<div class="empty">Keine anstehenden Termine für deine Gemeinde.</div>';
+      renderMeinUrlaubBox();
       return;
     }
     el.innerHTML = '';
     relevant.forEach(function(t){
       var f = fmtDatum(t.datum);
-      var st = myStatus(t.id);
+      var st = effectiveStatus(t, mySlug);
       var bem = myBemerkung(t.id);
+      var aufUrlaub = !hasExplicitStatus(t.id, mySlug) && isOnUrlaub(mySlug, t.datum);
       var dl = t.dienstleiter ? ('<br>Dienstleiter: ' + escapeHtml(t.dienstleiter)) : '';
+      var urlaubHint = aufUrlaub ? '<p class="hint" style="color:var(--gold);margin-top:8px;">Automatisch als abwesend markiert (Urlaub eingetragen). Bei Bedarf oben überschreiben.</p>' : '';
       var card = document.createElement('div');
       card.className = 'card';
       card.innerHTML =
@@ -490,6 +548,7 @@
           '<button class="status-btn sb-abwesend' + (st==='abwesend'?' sel-abwesend':'') + '">Abwesend</button>' +
           '<button class="status-btn sb-offen' + (st==='offen'?' sel-offen':'') + '">Offen</button>' +
         '</div>' +
+        urlaubHint +
         '<label style="margin-top:10px;">Bemerkung (sichtbar für alle in der Übersicht)</label>' +
         '<input type="text" class="bem-input" placeholder="z. B. komme später" value="' + escapeHtml(bem) + '">';
       card.querySelector('.sb-anwesend').addEventListener('click', function(){ setMyStatus(t.id, 'anwesend'); });
@@ -500,13 +559,46 @@
       bemInput.addEventListener('keydown', function(e){ if (e.key === 'Enter') bemInput.blur(); });
       el.appendChild(card);
     });
+    renderMeinUrlaubBox();
   }
 
-  function statusOf(terminId, amtstraegerId){
-    var docId = terminId + '__' + amtstraegerId;
-    var f = statusList.find(function(s){ return s.id === docId; });
-    return f ? f.status : 'offen';
+  function renderMeinUrlaubBox(){
+    var box = document.getElementById('urlaubMeinBox');
+    if (!box || !myName) return;
+    var list = myUrlaub();
+    var listHtml = list.length ? '' : '<p class="hint">Noch keine Urlaubstage eingetragen.</p>';
+    list.forEach(function(u){
+      var fv = fmtDatum(u.von), fb = fmtDatum(u.bis);
+      listHtml += '<div class="termin-admin-row"><div class="top-line">' +
+        '<div class="info">' + fv.datum + ' – ' + fb.datum + '</div>' +
+        '<button class="btn-secondary btn-danger" data-id="' + u.id + '">Löschen</button>' +
+        '</div></div>';
+    });
+    box.innerHTML = '<div class="card">' +
+      '<p class="section-title">Meine Urlaubstage</p>' +
+      '<p class="termin-sub">Wird automatisch bei „Meine Termine" und in der Übersicht als Abwesend berücksichtigt – auch für Termine, die noch nicht angelegt sind.</p>' +
+      '<label for="urlVon">Von</label><input type="date" id="urlVon">' +
+      '<label for="urlBis">Bis</label><input type="date" id="urlBis">' +
+      '<div id="urlError" class="error-msg" style="display:none;"></div>' +
+      '<button class="btn-primary" id="urlAddBtn">Hinzufügen</button>' +
+      '<div style="margin-top:10px;">' + listHtml + '</div>' +
+      '</div>';
+    box.querySelector('#urlAddBtn').addEventListener('click', function(){
+      var von = box.querySelector('#urlVon').value;
+      var bis = box.querySelector('#urlBis').value;
+      var err = box.querySelector('#urlError');
+      if (!von || !bis) { err.textContent = 'Bitte Von- und Bis-Datum wählen.'; err.style.display = 'block'; return; }
+      if (bis < von) { err.textContent = 'Das Bis-Datum darf nicht vor dem Von-Datum liegen.'; err.style.display = 'block'; return; }
+      err.style.display = 'none';
+      addUrlaub(von, bis);
+      box.querySelector('#urlVon').value = '';
+      box.querySelector('#urlBis').value = '';
+    });
+    box.querySelectorAll('.btn-danger').forEach(function(btn){
+      btn.addEventListener('click', function(){ deleteUrlaub(btn.dataset.id); });
+    });
   }
+
   var STATUS_SYMBOL = { anwesend:'✓', abwesend:'✕', offen:'–' };
 
   function buildUebFilter(){
@@ -547,10 +639,100 @@
     });
   }
 
-  function countRoles(terminId, cols){
+  function buildUrlFilter(){
+    var wrap = document.getElementById('urlFilter');
+    if (!wrap || !myGemeinde) return;
+    var buttons;
+    if (adminUnlocked) {
+      buttons = [
+        { f: 'boele', label: 'Boele' },
+        { f: 'hohenlimburg', label: 'Hohenlimburg' }
+      ];
+    } else {
+      buttons = [
+        { f: myGemeinde, label: GEMEINDEN[myGemeinde] || '' }
+      ];
+    }
+    if (!buttons.some(function(b){ return b.f === urlFilter; })) {
+      urlFilter = buttons[0].f;
+    }
+    wrap.innerHTML = '';
+    if (buttons.length < 2) {
+      wrap.style.display = 'none';
+      return;
+    }
+    wrap.style.display = 'flex';
+    buttons.forEach(function(b){
+      var btn = document.createElement('button');
+      btn.type = 'button';
+      btn.textContent = b.label;
+      if (b.f === urlFilter) btn.classList.add('active');
+      btn.addEventListener('click', function(){
+        wrap.querySelectorAll('button').forEach(function(x){ x.classList.remove('active'); });
+        btn.classList.add('active');
+        urlFilter = b.f;
+        renderUrlaub();
+      });
+      wrap.appendChild(btn);
+    });
+  }
+
+  var MONATSKUERZEL = ['Jan','Feb','Mär','Apr','Mai','Jun','Jul','Aug','Sep','Okt','Nov','Dez'];
+  function dayOfYear(iso){
+    var d = new Date(iso + 'T00:00:00');
+    var start = new Date(d.getFullYear(), 0, 1);
+    return Math.floor((d - start) / 86400000) + 1;
+  }
+  function isLeapYear(y){ return (y % 4 === 0 && y % 100 !== 0) || y % 400 === 0; }
+
+  function renderUrlaub(){
+    var el = document.getElementById('urlaubWrap');
+    if (!myGemeinde) return;
+    var year = new Date().getFullYear();
+    var daysInYear = isLeapYear(year) ? 366 : 365;
+    var cols = amtstraeger.filter(function(a){ return a.gemeinde === urlFilter; });
+    if (!cols.length) {
+      el.innerHTML = '<div class="empty">Noch keine Amtsträger für diese Gemeinde eingetragen.</div>';
+      return;
+    }
+    var yearStart = year + '-01-01', yearEnd = year + '-12-31';
+
+    var monthLine = '<div class="ur-months">';
+    for (var m = 0; m < 12; m++) {
+      monthLine += '<span>' + MONATSKUERZEL[m] + '</span>';
+    }
+    monthLine += '</div>';
+
+    var rows = '';
+    cols.forEach(function(g){
+      var ranges = urlaubList.filter(function(u){
+        return u.amtstraegerId === g.id && u.bis >= yearStart && u.von <= yearEnd;
+      });
+      var bars = '';
+      ranges.forEach(function(u){
+        var von = u.von < yearStart ? yearStart : u.von;
+        var bis = u.bis > yearEnd ? yearEnd : u.bis;
+        var startPct = ((dayOfYear(von) - 1) / daysInYear) * 100;
+        var widthPct = Math.max(((dayOfYear(bis) - dayOfYear(von) + 1) / daysInYear) * 100, 0.8);
+        var fv = fmtDatum(u.von), fb = fmtDatum(u.bis);
+        bars += '<div class="ur-bar" style="left:' + startPct.toFixed(2) + '%;width:' + widthPct.toFixed(2) + '%;" title="' + escapeHtml(g.name) + ': ' + fv.datum + ' – ' + fb.datum + '"></div>';
+      });
+      rows += '<div class="ur-row">' +
+        '<div class="ur-name">' + escapeHtml(g.name) + '</div>' +
+        '<div class="ur-track">' + bars + '</div>' +
+      '</div>';
+    });
+
+    el.innerHTML = '<div class="card ur-chart">' +
+      '<p class="section-title">Urlaub ' + year + ' · ' + (GEMEINDEN[urlFilter]||'') + '</p>' +
+      monthLine + rows +
+      '</div>';
+  }
+
+  function countRoles(t, cols){
     var p = 0, d = 0;
     cols.forEach(function(g){
-      if (statusOf(terminId, g.id) === 'anwesend') {
+      if (effectiveStatus(t, g.id) === 'anwesend') {
         if (g.rolle === 'priester') p++;
         else if (g.rolle === 'diakon') d++;
       }
@@ -563,8 +745,8 @@
   function personListHtml(t, cols){
     var html = '';
     cols.forEach(function(g){
-      var st = statusOf(t.id, g.id);
-      var bem = bemerkungOf(t.id, g.id);
+      var st = effectiveStatus(t, g.id);
+      var bem = effektiveBemerkung(t, g.id);
       html += '<div class="person-row"><span class="badge ' + st + '">' + STATUS_SYMBOL[st] + '</span>' +
         '<span class="person-name">' + escapeHtml(g.name) + ' <span class="hint" style="margin:0;">(' + (ROLLEN[g.rolle]||'') + ')</span></span>' +
         '<span class="person-status">' + STATUS_LABEL[st] + '</span></div>';
@@ -590,7 +772,7 @@
     var html = '';
     rows.forEach(function(t){
       var f = fmtDatum(t.datum);
-      var rc = countRoles(t.id, cols);
+      var rc = countRoles(t, cols);
       var dlHint = t.dienstleiter ? (' · Dienstleiter: ' + escapeHtml(t.dienstleiter)) : '';
       html += '<div class="card ueb-card">' +
         '<div class="ueb-head" data-tid="' + t.id + '">' +
