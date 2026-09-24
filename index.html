@@ -79,7 +79,12 @@
   .badge.abwesend { background:var(--red-bg); color:var(--red); }
   .badge.offen { background:var(--gray-bg); color:var(--ink-soft); }
   .badge.has-bem::after { content:''; position:absolute; top:-2px; right:-2px; width:7px; height:7px; border-radius:50%; background:var(--gold-strong); }
+  .ueb-card { padding:0; overflow:hidden; }
+  .ueb-head { padding:14px 16px; cursor:pointer; }
+  .ueb-toggle { display:block; font-size:0.78rem; color:var(--gold); font-weight:600; margin-top:8px; }
+  .ueb-persons { padding:0 16px 14px; border-top:1px solid var(--border); margin-top:2px; }
   .person-row { display:flex; align-items:center; gap:8px; padding:7px 0; border-top:1px solid var(--border); }
+  .person-row:first-child { border-top:none; }
   .person-name { flex:1; font-size:0.85rem; }
   .person-status { font-size:0.76rem; color:var(--ink-soft); }
   .person-bem { font-size:0.8rem; color:var(--ink-soft); font-style:italic; padding:0 0 7px 30px; }
@@ -544,36 +549,31 @@
       return;
     }
 
-    var html = '<p class="hint" style="margin-bottom:8px;">Auf einen Termin tippen, um die Personenliste mit Status und Bemerkung zu sehen.</p>';
-    html += '<div class="matrix-scroll"><table class="matrix"><thead><tr><th>Termin</th>';
-    cols.forEach(function(g){
-      html += '<th class="namecol">' + escapeHtml(g.name) + '</th>';
-    });
-    html += '</tr></thead><tbody>';
+    var html = '';
     rows.forEach(function(t){
       var f = fmtDatum(t.datum);
       var rc = countRoles(t.id, cols);
-      var ortHint = (t.gemeinsam && t.ort) ? (' · in ' + (GEMEINDEN[t.ort]||'')) : '';
       var dlHint = t.dienstleiter ? (' · Dienstleiter: ' + escapeHtml(t.dienstleiter)) : '';
-      html += '<tr class="termin-row" data-tid="' + t.id + '" style="cursor:pointer;"><td class="datecell">' + f.tag.slice(0,2) + ', ' + f.datum + (t.uhrzeit?' '+t.uhrzeit:'') +
-        '<span class="sub">' + escapeHtml(t.bezeichnung||'') + ortHint + dlHint + '<br>' + rc.p + ' Priester, ' + rc.d + ' Diakone anwesend</span></td>';
-      cols.forEach(function(g){
-        var st = statusOf(t.id, g.id);
-        var bem = bemerkungOf(t.id, g.id);
-        html += '<td><span class="badge ' + st + (bem ? ' has-bem' : '') + '">' + STATUS_SYMBOL[st] + '</span></td>';
-      });
-      html += '</tr>';
-      html += '<tr class="detail-row" data-tid-detail="' + t.id + '" style="display:none;"><td colspan="' + (cols.length+1) + '">' + personListHtml(t, cols) + '</td></tr>';
+      html += '<div class="card ueb-card">' +
+        '<div class="ueb-head" data-tid="' + t.id + '">' +
+          tagHtml(t) +
+          '<p class="termin-date">' + f.tag + ', ' + f.datum + (t.uhrzeit ? ' · ' + t.uhrzeit + ' Uhr' : '') + '</p>' +
+          '<p class="termin-sub">' + escapeHtml(t.bezeichnung||'') + dlHint + '<br>' + rc.p + ' Priester, ' + rc.d + ' Diakone anwesend</p>' +
+          '<span class="ueb-toggle">Personen anzeigen ▾</span>' +
+        '</div>' +
+        '<div class="ueb-persons" style="display:none;">' + personListHtml(t, cols) + '</div>' +
+      '</div>';
     });
-    html += '</tbody></table></div>';
     el.innerHTML = html;
 
-    el.querySelectorAll('.termin-row').forEach(function(row){
-      row.addEventListener('click', function(){
-        var tid = row.dataset.tid;
-        var detail = el.querySelector('.detail-row[data-tid-detail="' + tid + '"]');
-        if (!detail) return;
-        detail.style.display = (detail.style.display === 'none') ? 'table-row' : 'none';
+    el.querySelectorAll('.ueb-head').forEach(function(head){
+      head.addEventListener('click', function(){
+        var card = head.closest('.ueb-card');
+        var persons = card.querySelector('.ueb-persons');
+        var toggle = head.querySelector('.ueb-toggle');
+        var open = persons.style.display !== 'none';
+        persons.style.display = open ? 'none' : 'block';
+        toggle.textContent = open ? 'Personen ausblenden ▴' : 'Personen anzeigen ▾';
       });
     });
   }
