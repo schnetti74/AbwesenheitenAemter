@@ -742,6 +742,12 @@
     var el = document.getElementById('urlaubWrap');
     if (!myGemeinde) return;
     var cols = amtstraeger.filter(function(a){ return a.gemeinde === urlFilter; });
+    cols.sort(function(a,b){
+      var ra = a.rolle === 'priester' ? 0 : 1;
+      var rb = b.rolle === 'priester' ? 0 : 1;
+      if (ra !== rb) return ra - rb;
+      return (a.name||'').localeCompare(b.name||'', 'de');
+    });
     if (!cols.length) {
       el.innerHTML = '<div class="empty">Noch keine Amtsträger für diese Gemeinde eingetragen.</div>';
       return;
@@ -868,6 +874,13 @@
 
     html += '<div class="card"><p class="section-title">Bestehende Termine</p><div id="admList"></div></div>';
 
+    html += '<div class="card">' +
+      '<p class="section-title" style="color:var(--red);">Testphase: Alle Daten löschen</p>' +
+      '<p class="termin-sub">Löscht unwiderruflich alle Termine, Anwesenheiten, Bemerkungen, Urlaubstage und registrierten Amtsträger. Der Admin-Zugangscode bleibt erhalten. Dieser Button ist nur für die Testphase gedacht und wird danach wieder entfernt.</p>' +
+      '<button class="btn-primary" id="resetAllBtn" style="background:var(--red);">Alle Eingaben löschen</button>' +
+      '<div id="resetMsg" class="hint" style="display:none;"></div>' +
+      '</div>';
+
     el.innerHTML = html;
 
     document.getElementById('admGemeinsam').addEventListener('change', function(){
@@ -876,9 +889,31 @@
 
     document.getElementById('serSubmit').addEventListener('click', createSeries);
     document.getElementById('admSubmit').addEventListener('click', createSingle);
+    document.getElementById('resetAllBtn').addEventListener('click', resetAllData);
 
     renderAmtstraegerList();
     renderTermineList();
+  }
+
+  function resetAllData(){
+    var msg = document.getElementById('resetMsg');
+    var sure = confirm('Wirklich ALLE Termine, Anwesenheiten, Bemerkungen, Urlaubstage und Amtsträger unwiderruflich löschen?');
+    if (!sure) return;
+    var sicher = confirm('Letzte Sicherheitsabfrage: Es gibt kein Zurück. Wirklich alles löschen?');
+    if (!sicher) return;
+    var collections = ['termine', 'status', 'urlaub', 'amtstraeger'];
+    var tasks = collections.map(function(colName){
+      return db.collection(colName).get().then(function(snap){
+        var batch = db.batch();
+        snap.docs.forEach(function(d){ batch.delete(d.ref); });
+        return batch.commit();
+      });
+    });
+    Promise.all(tasks).then(function(){
+      if (msg) { msg.textContent = 'Alle Daten wurden gelöscht.'; msg.style.display = 'block'; }
+    }).catch(function(){
+      if (msg) { msg.textContent = 'Beim Löschen ist ein Fehler aufgetreten.'; msg.style.display = 'block'; }
+    });
   }
 
   function existsTermin(datum, gemeinde, gemeinsam){
