@@ -74,10 +74,15 @@
   table.matrix th.namecol { font-weight:600; color:var(--ink-soft); font-size:0.72rem; }
   table.matrix td.datecell { font-weight:600; }
   table.matrix td.datecell .sub { display:block; font-weight:400; color:var(--ink-soft); font-size:0.7rem; }
-  .badge { display:inline-block; width:22px; height:22px; line-height:22px; text-align:center; border-radius:6px; font-size:0.8rem; }
+  .badge { display:inline-block; width:22px; height:22px; line-height:22px; text-align:center; border-radius:6px; font-size:0.8rem; position:relative; }
   .badge.anwesend { background:var(--green-bg); color:var(--green); }
   .badge.abwesend { background:var(--red-bg); color:var(--red); }
   .badge.offen { background:var(--gray-bg); color:var(--ink-soft); }
+  .badge.has-bem::after { content:''; position:absolute; top:-2px; right:-2px; width:7px; height:7px; border-radius:50%; background:var(--gold-strong); }
+  .person-row { display:flex; align-items:center; gap:8px; padding:7px 0; border-top:1px solid var(--border); }
+  .person-name { flex:1; font-size:0.85rem; }
+  .person-status { font-size:0.76rem; color:var(--ink-soft); }
+  .person-bem { font-size:0.8rem; color:var(--ink-soft); font-style:italic; padding:0 0 7px 30px; }
   label { display:block; font-size:0.78rem; font-weight:600; color:var(--ink-soft); margin:12px 0 5px; }
   label:first-child { margin-top:0; }
   input[type=text], input[type=date], input[type=time], input[type=password], input[type=month], select {
@@ -164,6 +169,10 @@
 
   <section class="view" id="view-uebersicht">
     <div class="filter-row" id="uebFilter"></div>
+    <div class="filter-row" id="uebView">
+      <button data-v="tabelle" class="active">Tabelle</button>
+      <button data-v="details">Details je Person</button>
+    </div>
     <div id="uebersichtWrap"></div>
   </section>
 
@@ -216,6 +225,7 @@
   var statusList = [];
   var activeTab = 'meine';
   var uebFilter = 'boele';
+  var uebView = 'tabelle';
   var selectedOnboardG = null;
   var selectedOnboardR = null;
 
@@ -320,6 +330,14 @@
       if (activeTab === 'uebersicht') { buildUebFilter(); renderUebersicht(); }
     });
   });
+  document.querySelectorAll('#uebView button').forEach(function(btn){
+    btn.addEventListener('click', function(){
+      document.querySelectorAll('#uebView button').forEach(function(b){ b.classList.remove('active'); });
+      btn.classList.add('active');
+      uebView = btn.dataset.v;
+      renderUebersicht();
+    });
+  });
   // ---------- data ----------
   function initPerson(name, gemeinde, rolle){
     myName = name; mySlug = slugify(name); myGemeinde = gemeinde; myRolle = rolle;
@@ -379,13 +397,31 @@
     var f = statusList.find(function(s){ return s.id === docId; });
     return f ? f.status : 'offen';
   }
+  function myBemerkung(terminId){
+    var docId = terminId + '__' + mySlug;
+    var f = statusList.find(function(s){ return s.id === docId; });
+    return f && f.bemerkung ? f.bemerkung : '';
+  }
   function setMyStatus(terminId, status){
     if (!db) return;
     var docId = terminId + '__' + mySlug;
     db.collection('status').doc(docId).set({
       terminId: terminId, amtstraegerId: mySlug, name: myName, gemeinde: myGemeinde,
       status: status, updatedAt: new Date().toISOString()
-    }).catch(function(){});
+    }, { merge: true }).catch(function(){});
+  }
+  function setMyBemerkung(terminId, text){
+    if (!db) return;
+    var docId = terminId + '__' + mySlug;
+    db.collection('status').doc(docId).set({
+      terminId: terminId, amtstraegerId: mySlug, name: myName, gemeinde: myGemeinde,
+      bemerkung: text || null, updatedAt: new Date().toISOString()
+    }, { merge: true }).catch(function(){});
+  }
+  function bemerkungOf(terminId, amtstraegerId){
+    var docId = terminId + '__' + amtstraegerId;
+    var f = statusList.find(function(s){ return s.id === docId; });
+    return f && f.bemerkung ? f.bemerkung : '';
   }
 
   function tagHtml(t){
@@ -411,6 +447,7 @@
     relevant.forEach(function(t){
       var f = fmtDatum(t.datum);
       var st = myStatus(t.id);
+      var bem = myBemerkung(t.id);
       var dl = t.dienstleiter ? ('<br>Dienstleiter: ' + escapeHtml(t.dienstleiter)) : '';
       var card = document.createElement('div');
       card.className = 'card';
@@ -422,10 +459,15 @@
           '<button class="status-btn sb-anwesend' + (st==='anwesend'?' sel-anwesend':'') + '">Anwesend</button>' +
           '<button class="status-btn sb-abwesend' + (st==='abwesend'?' sel-abwesend':'') + '">Abwesend</button>' +
           '<button class="status-btn sb-offen' + (st==='offen'?' sel-offen':'') + '">Offen</button>' +
-        '</div>';
+        '</div>' +
+        '<label style="margin-top:10px;">Bemerkung (sichtbar für alle in der Übersicht)</label>' +
+        '<input type="text" class="bem-input" placeholder="z. B. komme später" value="' + escapeHtml(bem) + '">';
       card.querySelector('.sb-anwesend').addEventListener('click', function(){ setMyStatus(t.id, 'anwesend'); });
       card.querySelector('.sb-abwesend').addEventListener('click', function(){ setMyStatus(t.id, 'abwesend'); });
       card.querySelector('.sb-offen').addEventListener('click', function(){ setMyStatus(t.id, 'offen'); });
+      var bemInput = card.querySelector('.bem-input');
+      bemInput.addEventListener('blur', function(){ setMyBemerkung(t.id, bemInput.value.trim()); });
+      bemInput.addEventListener('keydown', function(e){ if (e.key === 'Enter') bemInput.blur(); });
       el.appendChild(card);
     });
   }
@@ -486,6 +528,8 @@
     return { p: p, d: d };
   }
 
+  var STATUS_LABEL = { anwesend:'Anwesend', abwesend:'Abwesend', offen:'Offen' };
+
   function renderUebersicht(){
     var el = document.getElementById('uebersichtWrap');
     var today = todayIso();
@@ -497,6 +541,8 @@
       el.innerHTML = '<div class="empty">Noch keine Daten für diese Auswahl.</div>';
       return;
     }
+    if (uebView === 'details') { renderUebersichtDetails(el, rows, cols); return; }
+
     var html = '<div class="matrix-scroll"><table class="matrix"><thead><tr><th>Termin</th>';
     cols.forEach(function(g){
       html += '<th class="namecol">' + escapeHtml(g.name) + '</th>';
@@ -511,11 +557,39 @@
         '<span class="sub">' + escapeHtml(t.bezeichnung||'') + ortHint + dlHint + '<br>' + rc.p + ' Priester, ' + rc.d + ' Diakone anwesend</span></td>';
       cols.forEach(function(g){
         var st = statusOf(t.id, g.id);
-        html += '<td><span class="badge ' + st + '">' + STATUS_SYMBOL[st] + '</span></td>';
+        var bem = bemerkungOf(t.id, g.id);
+        html += '<td><span class="badge ' + st + (bem ? ' has-bem' : '') + '"' + (bem ? (' title="' + escapeHtml(bem) + '"') : '') + '>' + STATUS_SYMBOL[st] + '</span></td>';
       });
       html += '</tr>';
     });
     html += '</tbody></table></div>';
+    if (rows.some(function(t){ return cols.some(function(g){ return bemerkungOf(t.id, g.id); }); })) {
+      html += '<p class="hint">Ein Punkt am Symbol zeigt eine Bemerkung – Details in der Ansicht „Details je Person".</p>';
+    }
+    el.innerHTML = html;
+  }
+
+  function renderUebersichtDetails(el, rows, cols){
+    var html = '';
+    rows.forEach(function(t){
+      var f = fmtDatum(t.datum);
+      var ortHint = (t.gemeinsam && t.ort) ? (' · in ' + (GEMEINDEN[t.ort]||'')) : '';
+      var dlHint = t.dienstleiter ? (' · Dienstleiter: ' + escapeHtml(t.dienstleiter)) : '';
+      html += '<div class="card">' + tagHtml(t) +
+        '<p class="termin-date">' + f.tag + ', ' + f.datum + (t.uhrzeit?' · '+t.uhrzeit+' Uhr':'') + '</p>' +
+        '<p class="termin-sub">' + escapeHtml(t.bezeichnung||'') + ortHint + dlHint + '</p>';
+      cols.forEach(function(g){
+        var st = statusOf(t.id, g.id);
+        var bem = bemerkungOf(t.id, g.id);
+        html += '<div class="person-row"><span class="badge ' + st + '">' + STATUS_SYMBOL[st] + '</span>' +
+          '<span class="person-name">' + escapeHtml(g.name) + ' <span class="hint" style="margin:0;">(' + (ROLLEN[g.rolle]||'') + ')</span></span>' +
+          '<span class="person-status">' + STATUS_LABEL[st] + '</span></div>';
+        if (bem) {
+          html += '<div class="person-bem">„' + escapeHtml(bem) + '"</div>';
+        }
+      });
+      html += '</div>';
+    });
     el.innerHTML = html;
   }
 
