@@ -943,10 +943,15 @@
     var year = parseInt(parts[0],10), month = parseInt(parts[1],10);
     var seriesId = monthVal + '-serie';
     var toCreate = [];
+    var today = todayIso();
     var d = new Date(year, month-1, 1);
     while (d.getMonth() === month-1) {
       var iso = d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0');
       var wd = d.getDay();
+      if (iso < today) {
+        d.setDate(d.getDate()+1);
+        continue;
+      }
       if (wd === 3) {
         if (!existsTermin(iso, null, true)) {
           toCreate.push({ datum: iso, uhrzeit:'19:30', bezeichnung:'Mittwochsgottesdienst', gemeinsam:true, gemeinde:null, ort:ortVal, seriesId: seriesId });
@@ -1013,7 +1018,7 @@
       row.className = 'termin-admin-row';
       row.innerHTML =
         '<div class="top-line">' +
-          '<div class="info">' + tagHtml(t) + '<br>' + f.tag + ', ' + f.datum + (t.uhrzeit?' · '+t.uhrzeit:'') + '<span class="sub">' + escapeHtml(t.bezeichnung||'') + (t.dienstleiter ? (' · Dienstleiter: ' + escapeHtml(t.dienstleiter)) : '') + '</span></div>' +
+          '<div class="info">' + tagHtml(t) + '<br>' + f.tag + ', ' + f.datum + (t.uhrzeit?' · '+t.uhrzeit:'') + ' <span class="sub">' + escapeHtml(t.bezeichnung||'') + (t.dienstleiter ? (' · Dienstleiter: ' + escapeHtml(t.dienstleiter)) : '') + '</span></div>' +
           '<div class="row-actions"><button class="btn-secondary editBtn">Bearbeiten</button><button class="btn-secondary btn-danger delBtn">Löschen</button></div>' +
         '</div><div class="edit-box" style="display:none;"></div>';
       row.querySelector('.delBtn').addEventListener('click', function(){
