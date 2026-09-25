@@ -103,6 +103,15 @@
   textarea { resize:vertical; min-height:110px; line-height:1.5; }
   .dl-preview { padding-left:18px; margin:8px 0; font-size:0.82rem; color:var(--ink-soft); }
   .dl-preview li { padding:2px 0; }
+  .ausw-head-row { display:flex; align-items:center; gap:8px; padding:6px 0 8px; border-bottom:1px solid var(--border); margin-bottom:2px; }
+  .ausw-head-row .ausw-name { visibility:hidden; }
+  .ausw-row { display:flex; align-items:center; gap:8px; padding:9px 0; border-bottom:1px solid var(--border); }
+  .ausw-row:last-child { border-bottom:none; }
+  .ausw-name { flex:1; font-weight:600; font-size:0.86rem; }
+  .ausw-name .hint { display:block; font-weight:400; margin-top:1px; }
+  .ausw-stat { min-width:92px; text-align:right; font-size:0.72rem; color:var(--ink-soft); font-weight:600; }
+  .ausw-stat b { display:block; color:var(--ink); font-size:1rem; font-weight:700; }
+  .ausw-stat span { font-weight:400; color:var(--ink-soft); }
   input:focus, select:focus, .status-btn:focus-visible, button:focus-visible { outline:2px solid var(--gold); outline-offset:1px; }
   .checkline { display:flex; align-items:center; gap:8px; margin-top:12px; }
   .checkline input[type=checkbox] { width:18px; height:18px; }
@@ -184,6 +193,7 @@
       <button class="tab-btn" data-tab="uebersicht">Übersicht</button>
       <button class="tab-btn" data-tab="urlaub">Urlaub</button>
       <button class="tab-btn" data-tab="admin">Termine</button>
+      <button class="tab-btn" data-tab="auswertung" style="display:none;">Auswertung</button>
     </nav>
   </header>
 
@@ -204,6 +214,10 @@
 
   <section class="view" id="view-admin">
     <div id="adminWrap"></div>
+  </section>
+
+  <section class="view" id="view-auswertung">
+    <div id="auswertungWrap"></div>
   </section>
 </div>
 
@@ -245,6 +259,10 @@
   var GEMEINDEN = { boele: 'Boele', hohenlimburg: 'Hohenlimburg' };
   var ROLLEN = { diakon: 'Diakon', priester: 'Priester' };
 
+  // Feste Namensliste (genau wie beim Anmelden eingegeben): nur diese Personen
+  // bekommen Zugriff auf den Tab "Auswertung".
+  var AUSWERTUNG_ALLOWED_NAMES = ['Matthias Schnettler'];
+
   var myName = null, mySlug = null, myGemeinde = null, myRolle = null;
   var termine = [];
   var amtstraeger = [];
@@ -253,6 +271,9 @@
   var activeTab = 'meine';
   var uebFilter = 'boele';
   var urlFilter = 'boele';
+  var auswFilter = 'boele';
+  var auswScope = 'gesamt';
+  var auswertungUnlocked = false;
   var selectedOnboardG = null;
   var selectedOnboardR = null;
   var selectedOnboardA = 'nein';
@@ -313,6 +334,8 @@
     wr.className = 'tag gemeinsam';
     var termineTabBtn = document.querySelector('.tab-btn[data-tab="admin"]');
     if (termineTabBtn) termineTabBtn.style.display = adminUnlocked ? '' : 'none';
+    var auswertungTabBtn = document.querySelector('.tab-btn[data-tab="auswertung"]');
+    if (auswertungTabBtn) auswertungTabBtn.style.display = auswertungUnlocked ? '' : 'none';
     buildUebFilter();
   }
 
@@ -402,11 +425,13 @@
       if (activeTab === 'admin') renderAdmin();
       if (activeTab === 'uebersicht') { buildUebFilter(); renderUebersicht(); }
       if (activeTab === 'urlaub') { buildUrlFilter(); renderUrlaub(); }
+      if (activeTab === 'auswertung') { renderAuswertung(); }
     });
   });
   // ---------- data ----------
   function initPerson(name, gemeinde, rolle){
     myName = name; mySlug = slugify(name); myGemeinde = gemeinde; myRolle = rolle;
+    auswertungUnlocked = AUSWERTUNG_ALLOWED_NAMES.map(slugify).indexOf(mySlug) !== -1;
     showApp();
     if (!db) return;
     db.collection('amtstraeger').doc(mySlug).get().then(function(snap){
@@ -430,22 +455,22 @@
       termine = snap.docs.map(function(d){ return Object.assign({ id: d.id }, d.data()); });
       termine.sort(sortByDatumZeit);
       reconcileUrlaubStatus();
-      renderMeine(); renderUebersicht(); renderAdmin();
+      renderMeine(); renderUebersicht(); renderAdmin(); renderAuswertung();
     }, function(){});
     db.collection('amtstraeger').onSnapshot(function(snap){
       amtstraeger = snap.docs.map(function(d){ return Object.assign({ id: d.id }, d.data()); });
       amtstraeger.sort(function(a,b){ return (a.name||'').localeCompare(b.name||'', 'de'); });
-      renderUebersicht(); renderAdmin();
+      renderUebersicht(); renderAdmin(); renderAuswertung();
     }, function(){});
     db.collection('status').onSnapshot(function(snap){
       statusList = snap.docs.map(function(d){ return Object.assign({ id: d.id }, d.data()); });
-      renderMeine(); renderUebersicht();
+      renderMeine(); renderUebersicht(); renderAuswertung();
     }, function(){});
     db.collection('urlaub').onSnapshot(function(snap){
       urlaubList = snap.docs.map(function(d){ return Object.assign({ id: d.id }, d.data()); });
       urlaubList.sort(function(a,b){ return (a.von||'') < (b.von||'') ? -1 : 1; });
       reconcileUrlaubStatus();
-      renderMeine(); renderUebersicht(); renderUrlaub();
+      renderMeine(); renderUebersicht(); renderUrlaub(); renderAuswertung();
     }, function(){});
   }
 
@@ -813,6 +838,158 @@
       html += yearChartHtml(y, cols);
     });
     el.innerHTML = html;
+  }
+
+  // ---------- Auswertung (Anwesenheits-Quoten) ----------
+  function terminWeekdayBucket(t){
+    if (!t.datum) return null;
+    var d = new Date(t.datum + 'T00:00:00');
+    var wd = d.getDay();
+    if (wd === 0) return 'sonntag';
+    if (wd === 3) return 'mittwoch';
+    return null;
+  }
+  function terminAppliesTo(t, amt){
+    return !!t.gemeinsam || t.gemeinde === amt.gemeinde;
+  }
+  function isCountableTermin(t){
+    if (!t.datum || t.datum > todayIso()) return false;
+    return terminWeekdayBucket(t) !== null;
+  }
+  function auswertungStatusFor(t, amtstraegerId){
+    var docId = t.id + '__' + amtstraegerId;
+    var s = statusList.find(function(x){ return x.id === docId; });
+    if (s && s.autoUrlaub) return 'ausgeschlossen';
+    if (!s && isOnUrlaub(amtstraegerId, t.datum)) return 'ausgeschlossen';
+    if (!s || !s.status || s.status === 'offen') return 'offen';
+    return s.status;
+  }
+  function newAuswBucketPair(){ return { sonntag: { anwesend:0, total:0 }, mittwoch: { anwesend:0, total:0 } }; }
+  function buildAuswertungData(){
+    var data = {};
+    amtstraeger.forEach(function(a){
+      data[a.id] = { id: a.id, name: a.name || a.id, gemeinde: a.gemeinde, rolle: a.rolle, gesamt: newAuswBucketPair(), jahre: {}, monate: {} };
+    });
+    termine.forEach(function(t){
+      if (!isCountableTermin(t)) return;
+      var bucket = terminWeekdayBucket(t);
+      var jahr = t.datum.slice(0,4);
+      var monat = t.datum.slice(0,7);
+      amtstraeger.forEach(function(a){
+        var rec = data[a.id];
+        if (!rec || !terminAppliesTo(t, a)) return;
+        var st = auswertungStatusFor(t, a.id);
+        if (st === 'ausgeschlossen' || st === 'offen') return;
+        if (!rec.jahre[jahr]) rec.jahre[jahr] = newAuswBucketPair();
+        if (!rec.monate[monat]) rec.monate[monat] = newAuswBucketPair();
+        [rec.gesamt[bucket], rec.jahre[jahr][bucket], rec.monate[monat][bucket]].forEach(function(b){
+          b.total++;
+          if (st === 'anwesend') b.anwesend++;
+        });
+      });
+    });
+    return data;
+  }
+  function auswPct(b){
+    if (!b || !b.total) return null;
+    return Math.round(b.anwesend / b.total * 100);
+  }
+  function auswStatHtml(b){
+    var p = auswPct(b);
+    if (p === null) return '<span class="ausw-stat">–</span>';
+    return '<span class="ausw-stat"><b>' + p + ' %</b><span>(' + b.anwesend + '/' + b.total + ')</span></span>';
+  }
+  function auswScopeOptionsHtml(){
+    var years = {}, months = {};
+    termine.forEach(function(t){
+      if (!isCountableTermin(t)) return;
+      years[t.datum.slice(0,4)] = true;
+      months[t.datum.slice(0,7)] = true;
+    });
+    var html = '<option value="gesamt">Gesamt</option>';
+    var yearKeys = Object.keys(years).sort(function(a,b){ return b-a; });
+    if (yearKeys.length) {
+      html += '<optgroup label="Jahr">';
+      yearKeys.forEach(function(y){ html += '<option value="jahr:' + y + '">' + y + '</option>'; });
+      html += '</optgroup>';
+    }
+    var monthKeys = Object.keys(months).sort(function(a,b){ return a < b ? 1 : -1; });
+    if (monthKeys.length) {
+      html += '<optgroup label="Monat">';
+      monthKeys.forEach(function(m){
+        var p = m.split('-'); var mi = parseInt(p[1],10)-1;
+        html += '<option value="monat:' + m + '">' + (MONATSNAMEN[mi]||'') + ' ' + p[0] + '</option>';
+      });
+      html += '</optgroup>';
+    }
+    return html;
+  }
+  function renderAuswertung(){
+    var el = document.getElementById('auswertungWrap');
+    if (!el) return;
+    if (!auswertungUnlocked) { el.innerHTML = '<div class="empty">Kein Zugriff.</div>'; return; }
+    if (!db) { el.innerHTML = '<div class="empty">Firebase ist noch nicht eingerichtet.</div>'; return; }
+
+    var data = buildAuswertungData();
+    var cols = amtstraeger.filter(function(a){ return a.gemeinde === auswFilter; });
+    cols.sort(function(a,b){
+      var ra = a.rolle === 'priester' ? 0 : 1;
+      var rb = b.rolle === 'priester' ? 0 : 1;
+      if (ra !== rb) return ra - rb;
+      return (a.name||'').localeCompare(b.name||'', 'de');
+    });
+
+    var html = '<div class="filter-row">' +
+      '<button type="button" data-g="boele" class="' + (auswFilter==='boele'?'active':'') + '">Boele</button>' +
+      '<button type="button" data-g="hohenlimburg" class="' + (auswFilter==='hohenlimburg'?'active':'') + '">Hohenlimburg</button>' +
+      '</div>';
+
+    html += '<div class="card">' +
+      '<label for="auswScope">Zeitraum</label>' +
+      '<select id="auswScope">' + auswScopeOptionsHtml() + '</select>' +
+      '<p class="termin-sub" style="margin-top:10px;">Anwesenheits-Quote je Person, getrennt nach Sonntags- und Mittwochsterminen. Es zählen nur bereits vergangene Termine; Urlaubstage fließen nicht in die Berechnung ein.</p>' +
+      '<div class="ausw-head-row"><span class="ausw-name">&nbsp;</span><span class="ausw-stat">Sonntag</span><span class="ausw-stat">Mittwoch</span></div>';
+
+    if (!cols.length) {
+      html += '<div class="empty">Noch keine Amtsträger für diese Gemeinde eingetragen.</div>';
+    } else {
+      cols.forEach(function(a){
+        var rec = data[a.id];
+        var bucketPair;
+        if (auswScope === 'gesamt') {
+          bucketPair = rec ? rec.gesamt : newAuswBucketPair();
+        } else {
+          var parts = auswScope.split(':');
+          var key = parts[1];
+          var src = rec ? (parts[0] === 'jahr' ? rec.jahre : rec.monate) : {};
+          bucketPair = src[key] || newAuswBucketPair();
+        }
+        html += '<div class="ausw-row">' +
+          '<span class="ausw-name">' + escapeHtml(a.name) + '<span class="hint">' + (ROLLEN[a.rolle]||'') + '</span></span>' +
+          auswStatHtml(bucketPair.sonntag) +
+          auswStatHtml(bucketPair.mittwoch) +
+          '</div>';
+      });
+    }
+    html += '</div>';
+
+    el.innerHTML = html;
+
+    el.querySelectorAll('.filter-row button').forEach(function(btn){
+      btn.addEventListener('click', function(){
+        auswFilter = btn.dataset.g;
+        renderAuswertung();
+      });
+    });
+    var scopeSel = document.getElementById('auswScope');
+    if (scopeSel) {
+      scopeSel.value = auswScope;
+      if (scopeSel.value !== auswScope) { auswScope = 'gesamt'; scopeSel.value = 'gesamt'; }
+      scopeSel.addEventListener('change', function(){
+        auswScope = this.value;
+        renderAuswertung();
+      });
+    }
   }
 
   function countRoles(t, cols){
