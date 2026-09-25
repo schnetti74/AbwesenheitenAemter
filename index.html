@@ -505,7 +505,10 @@
     return '';
   }
   function myUrlaub(){
-    return urlaubList.filter(function(u){ return u.amtstraegerId === mySlug; });
+    // Urlaube, die vollständig in einem vergangenen Jahr liegen, werden hier nicht mehr
+    // angezeigt, sobald ein neues Jahr begonnen hat.
+    var yearStart = new Date().getFullYear() + '-01-01';
+    return urlaubList.filter(function(u){ return u.amtstraegerId === mySlug && (u.bis||'') >= yearStart; });
   }
   function addUrlaub(von, bis){
     if (!db) return;
