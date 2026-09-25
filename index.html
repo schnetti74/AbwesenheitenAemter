@@ -905,22 +905,7 @@
       '<div id="serMsg" class="hint" style="display:none;"></div>' +
       '</div>';
 
-    html += '<div class="card">' +
-      '<p class="section-title">Einzelnen Termin anlegen</p>' +
-      '<label for="admDatum">Datum</label>' +
-      '<input type="date" id="admDatum">' +
-      '<label for="admZeit">Uhrzeit</label>' +
-      '<input type="time" id="admZeit" value="10:00">' +
-      '<label for="admBez">Bezeichnung</label>' +
-      '<input type="text" id="admBez" placeholder="z. B. Sonntagsgottesdienst">' +
-      '<div class="checkline"><input type="checkbox" id="admGemeinsam"><label for="admGemeinsam" style="margin:0;">Gemeinsamer Termin (beide Gemeinden)</label></div>' +
-      '<div id="admGemeindeWrap"><label for="admGemeinde" id="admGemeindeLabel">Gemeinde</label>' +
-      '<select id="admGemeinde"><option value="boele">Boele</option><option value="hohenlimburg">Hohenlimburg</option></select></div>' +
-      '<label for="admDienstleiter">Dienstleiter (optional)</label>' +
-      '<input type="text" id="admDienstleiter" placeholder="Name eintragen">' +
-      '<button class="btn-primary" id="admSubmit">Termin anlegen</button>' +
-      '<div id="admError" class="error-msg" style="display:none;"></div>' +
-      '</div>';
+    html += '<div id="admSingleBoxWrap"></div>';
 
     html += '<div id="dlBoxWrap"></div>';
 
@@ -937,14 +922,10 @@
 
     el.innerHTML = html;
 
-    document.getElementById('admGemeinsam').addEventListener('change', function(){
-      document.getElementById('admGemeindeLabel').textContent = this.checked ? 'Ort des gemeinsamen Gottesdienstes' : 'Gemeinde';
-    });
-
     document.getElementById('serSubmit').addEventListener('click', createSeries);
-    document.getElementById('admSubmit').addEventListener('click', createSingle);
     document.getElementById('resetAllBtn').addEventListener('click', resetAllData);
 
+    renderAdmSingleBox();
     renderDlBox();
     renderAmtstraegerList();
     renderTermineList();
@@ -971,7 +952,45 @@
     });
   }
 
+  var admSingleBoxOpen = false;
+  function renderAdmSingleBox(){
+    var wrap = document.getElementById('admSingleBoxWrap');
+    if (!wrap) return;
+    wrap.innerHTML = '<div class="card ueb-card">' +
+      '<div class="ueb-head" id="admSingleBoxHead">' +
+        '<p class="section-title" style="margin-bottom:2px;">Einzelnen Termin anlegen</p>' +
+        '<span class="ueb-toggle">' + (admSingleBoxOpen ? 'Einklappen ▴' : 'Aufklappen ▾') + '</span>' +
+      '</div>' +
+      '<div class="ueb-persons" id="admSingleBoxBody" style="display:' + (admSingleBoxOpen ? 'block' : 'none') + ';">' +
+        '<label for="admDatum" style="margin-top:10px;">Datum</label>' +
+        '<input type="date" id="admDatum">' +
+        '<label for="admZeit">Uhrzeit</label>' +
+        '<input type="time" id="admZeit" value="10:00">' +
+        '<label for="admBez">Bezeichnung</label>' +
+        '<input type="text" id="admBez" placeholder="z. B. Sonntagsgottesdienst">' +
+        '<div class="checkline"><input type="checkbox" id="admGemeinsam"><label for="admGemeinsam" style="margin:0;">Gemeinsamer Termin (beide Gemeinden)</label></div>' +
+        '<div id="admGemeindeWrap"><label for="admGemeinde" id="admGemeindeLabel">Gemeinde</label>' +
+        '<select id="admGemeinde"><option value="boele">Boele</option><option value="hohenlimburg">Hohenlimburg</option></select></div>' +
+        '<label for="admDienstleiter">Dienstleiter (optional)</label>' +
+        '<input type="text" id="admDienstleiter" placeholder="Name eintragen">' +
+        '<button class="btn-primary" id="admSubmit">Termin anlegen</button>' +
+        '<div id="admError" class="error-msg" style="display:none;"></div>' +
+      '</div>' +
+    '</div>';
+    wrap.querySelector('#admSingleBoxHead').addEventListener('click', function(){
+      admSingleBoxOpen = !admSingleBoxOpen;
+      renderAdmSingleBox();
+    });
+    if (admSingleBoxOpen) {
+      document.getElementById('admGemeinsam').addEventListener('change', function(){
+        document.getElementById('admGemeindeLabel').textContent = this.checked ? 'Ort des gemeinsamen Gottesdienstes' : 'Gemeinde';
+      });
+      document.getElementById('admSubmit').addEventListener('click', createSingle);
+    }
+  }
+
   var dlBoxOpen = false;
+  var dlGemeinde = 'boele';
   function terminOrt(t){
     var key = t.gemeinsam ? t.ort : t.gemeinde;
     return GEMEINDEN[key] || '';
@@ -986,9 +1005,14 @@
         '<span class="ueb-toggle">' + (dlBoxOpen ? 'Einklappen ▴' : 'Aufklappen ▾') + '</span>' +
       '</div>' +
       '<div class="ueb-persons" id="dlBoxBody" style="display:' + (dlBoxOpen ? 'block' : 'none') + ';">' +
-        '<p class="termin-sub" style="margin-top:10px;">Monat wählen, dann die Dienstleiter zeilenweise eintragen – Zeile 1 gilt für den ersten Termin in der Liste unten, Zeile 2 für den zweiten usw. Eine leere Zeile löscht den bisherigen Dienstleiter des jeweiligen Termins.</p>' +
+        '<p class="termin-sub" style="margin-top:10px;">Monat und Gemeinde wählen, dann die Dienstleiter zeilenweise eintragen – Zeile 1 gilt für den ersten Termin in der Liste unten, Zeile 2 für den zweiten usw. Die Ämterstunde ist hier nicht enthalten. Eine leere Zeile löscht den bisherigen Dienstleiter des jeweiligen Termins.</p>' +
         '<label for="dlMonth">Monat</label>' +
         '<select id="dlMonth">' + dlMonthOptionsHtml() + '</select>' +
+        '<label for="dlGemeinde">Gemeinde</label>' +
+        '<select id="dlGemeinde">' +
+          '<option value="boele"' + (dlGemeinde==='boele'?' selected':'') + '>Boele</option>' +
+          '<option value="hohenlimburg"' + (dlGemeinde==='hohenlimburg'?' selected':'') + '>Hohenlimburg</option>' +
+        '</select>' +
         '<div id="dlListPreview"></div>' +
         '<label for="dlNames">Dienstleiter (eine Zeile pro Termin, in der Reihenfolge der Liste oben)</label>' +
         '<textarea id="dlNames" placeholder="Name Termin 1' + String.fromCharCode(10) + 'Name Termin 2' + String.fromCharCode(10) + '..."></textarea>' +
@@ -1002,8 +1026,10 @@
     });
     if (dlBoxOpen) {
       var dlMonthSel = document.getElementById('dlMonth');
-      renderDlPreview(dlMonthSel.value);
-      dlMonthSel.addEventListener('change', function(){ renderDlPreview(this.value); });
+      var dlGemeindeSel = document.getElementById('dlGemeinde');
+      renderDlPreview(dlMonthSel.value, dlGemeindeSel.value);
+      dlMonthSel.addEventListener('change', function(){ renderDlPreview(this.value, dlGemeindeSel.value); });
+      dlGemeindeSel.addEventListener('change', function(){ dlGemeinde = this.value; renderDlPreview(dlMonthSel.value, dlGemeinde); });
       document.getElementById('dlSubmit').addEventListener('click', submitDlNames);
     }
   }
@@ -1017,14 +1043,18 @@
       return '<option value="' + m + '">' + (MONATSNAMEN[mi]||'') + ' ' + p[0] + '</option>';
     }).join('');
   }
-  function terminePerMonth(monthVal){
-    return termine.filter(function(t){ return (t.datum||'').slice(0,7) === monthVal; }).slice().sort(sortByDatumZeit);
+  function terminePerMonthGemeinde(monthVal, gemeinde){
+    return termine.filter(function(t){
+      return (t.datum||'').slice(0,7) === monthVal &&
+        t.bezeichnung !== 'Ämterstunde' &&
+        (t.gemeinsam || t.gemeinde === gemeinde);
+    }).slice().sort(sortByDatumZeit);
   }
-  function renderDlPreview(monthVal){
+  function renderDlPreview(monthVal, gemeinde){
     var el = document.getElementById('dlListPreview');
     if (!el) return;
-    var list = terminePerMonth(monthVal);
-    if (!list.length) { el.innerHTML = '<p class="hint">Keine Termine in diesem Monat.</p>'; return; }
+    var list = terminePerMonthGemeinde(monthVal, gemeinde);
+    if (!list.length) { el.innerHTML = '<p class="hint">Keine Termine für diese Auswahl.</p>'; return; }
     var html = '<ol class="dl-preview">';
     list.forEach(function(t){
       var f = fmtDatum(t.datum);
@@ -1037,9 +1067,10 @@
   }
   function submitDlNames(){
     var monthVal = document.getElementById('dlMonth').value;
+    var gemeinde = document.getElementById('dlGemeinde').value;
     var msg = document.getElementById('dlMsg');
-    var list = terminePerMonth(monthVal);
-    if (!monthVal || !list.length) { msg.textContent = 'Keine Termine in diesem Monat.'; msg.style.display = 'block'; return; }
+    var list = terminePerMonthGemeinde(monthVal, gemeinde);
+    if (!monthVal || !list.length) { msg.textContent = 'Keine Termine für diese Auswahl.'; msg.style.display = 'block'; return; }
     var lines = document.getElementById('dlNames').value.split('\n').map(function(l){ return l.trim(); });
     var extraHint = '';
     if (lines.length > list.length) {
@@ -1054,7 +1085,7 @@
       msg.textContent = extraHint + n + ' Dienstleiter wurden übernommen.';
       msg.style.display = 'block';
       document.getElementById('dlNames').value = '';
-      renderDlPreview(monthVal);
+      renderDlPreview(monthVal, gemeinde);
     }).catch(function(){
       msg.textContent = 'Beim Speichern ist ein Fehler aufgetreten.'; msg.style.display = 'block';
     });
