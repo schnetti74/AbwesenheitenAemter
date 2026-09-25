@@ -97,9 +97,12 @@
   .ur-bar { position:absolute; top:0; height:100%; background:var(--gold-strong); border-radius:4px; min-width:3px; }
   label { display:block; font-size:0.78rem; font-weight:600; color:var(--ink-soft); margin:12px 0 5px; }
   label:first-child { margin-top:0; }
-  input[type=text], input[type=date], input[type=time], input[type=password], input[type=month], select {
+  input[type=text], input[type=date], input[type=time], input[type=password], input[type=month], select, textarea {
     width:100%; padding:10px 11px; border-radius:8px; border:1px solid var(--border); background:var(--bg-alt); color:var(--ink); font-family:inherit; font-size:0.92rem;
   }
+  textarea { resize:vertical; min-height:110px; line-height:1.5; }
+  .dl-preview { padding-left:18px; margin:8px 0; font-size:0.82rem; color:var(--ink-soft); }
+  .dl-preview li { padding:2px 0; }
   input:focus, select:focus, .status-btn:focus-visible, button:focus-visible { outline:2px solid var(--gold); outline-offset:1px; }
   .checkline { display:flex; align-items:center; gap:8px; margin-top:12px; }
   .checkline input[type=checkbox] { width:18px; height:18px; }
@@ -426,6 +429,7 @@
     db.collection('termine').onSnapshot(function(snap){
       termine = snap.docs.map(function(d){ return Object.assign({ id: d.id }, d.data()); });
       termine.sort(sortByDatumZeit);
+      reconcileUrlaubStatus();
       renderMeine(); renderUebersicht(); renderAdmin();
     }, function(){});
     db.collection('amtstraeger').onSnapshot(function(snap){
@@ -440,6 +444,7 @@
     db.collection('urlaub').onSnapshot(function(snap){
       urlaubList = snap.docs.map(function(d){ return Object.assign({ id: d.id }, d.data()); });
       urlaubList.sort(function(a,b){ return (a.von||'') < (b.von||'') ? -1 : 1; });
+      reconcileUrlaubStatus();
       renderMeine(); renderUebersicht(); renderUrlaub();
     }, function(){});
   }
@@ -454,7 +459,7 @@
     var docId = terminId + '__' + mySlug;
     db.collection('status').doc(docId).set({
       terminId: terminId, amtstraegerId: mySlug, name: myName, gemeinde: myGemeinde,
-      status: status, updatedAt: new Date().toISOString()
+      status: status, autoUrlaub: false, updatedAt: new Date().toISOString()
     }, { merge: true }).catch(function(){});
   }
   function setMyBemerkung(terminId, text){
@@ -462,8 +467,13 @@
     var docId = terminId + '__' + mySlug;
     db.collection('status').doc(docId).set({
       terminId: terminId, amtstraegerId: mySlug, name: myName, gemeinde: myGemeinde,
-      bemerkung: text || null, updatedAt: new Date().toISOString()
+      bemerkung: text || null, autoUrlaub: false, updatedAt: new Date().toISOString()
     }, { merge: true }).catch(function(){});
+  }
+  function isAutoUrlaubStatus(terminId, amtstraegerId){
+    var docId = terminId + '__' + amtstraegerId;
+    var f = statusList.find(function(s){ return s.id === docId; });
+    return !!(f && f.autoUrlaub);
   }
   function bemerkungOf(terminId, amtstraegerId){
     var docId = terminId + '__' + amtstraegerId;
@@ -502,11 +512,41 @@
     db.collection('urlaub').add({
       amtstraegerId: mySlug, name: myName, gemeinde: myGemeinde,
       von: von, bis: bis, createdAt: new Date().toISOString()
-    }).catch(function(){});
+    }).then(function(){ reconcileUrlaubStatus(); }).catch(function(){});
   }
   function deleteUrlaub(id){
     if (!db) return;
-    db.collection('urlaub').doc(id).delete().catch(function(){});
+    var u = urlaubList.find(function(x){ return x.id === id; });
+    db.collection('urlaub').doc(id).delete().then(function(){
+      if (!u) return;
+      // Automatisch (per Urlaub) gesetzte Status im betroffenen Zeitraum wieder zurücknehmen,
+      // manuell gesetzte/überschriebene Status bleiben unangetastet.
+      termine.forEach(function(t){
+        if ((t.datum||'') < u.von || (t.datum||'') > u.bis) return;
+        if (!t.gemeinsam && t.gemeinde !== u.gemeinde) return;
+        var docId = t.id + '__' + u.amtstraegerId;
+        var s = statusList.find(function(x){ return x.id === docId; });
+        if (s && s.autoUrlaub) {
+          db.collection('status').doc(docId).delete().catch(function(){});
+        }
+      });
+    }).catch(function(){});
+  }
+  function reconcileUrlaubStatus(){
+    if (!db) return;
+    termine.forEach(function(t){
+      urlaubList.forEach(function(u){
+        if ((t.datum||'') < u.von || (t.datum||'') > u.bis) return;
+        if (!t.gemeinsam && t.gemeinde !== u.gemeinde) return;
+        var docId = t.id + '__' + u.amtstraegerId;
+        var already = statusList.some(function(s){ return s.id === docId; });
+        if (already) return;
+        db.collection('status').doc(docId).set({
+          terminId: t.id, amtstraegerId: u.amtstraegerId, name: u.name, gemeinde: u.gemeinde,
+          status: 'abwesend', bemerkung: 'Urlaub', autoUrlaub: true, updatedAt: new Date().toISOString()
+        }, { merge: true }).catch(function(){});
+      });
+    });
   }
 
   function tagHtml(t){
@@ -534,7 +574,7 @@
       var f = fmtDatum(t.datum);
       var st = effectiveStatus(t, mySlug);
       var bem = myBemerkung(t.id);
-      var aufUrlaub = !hasExplicitStatus(t.id, mySlug) && isOnUrlaub(mySlug, t.datum);
+      var aufUrlaub = isAutoUrlaubStatus(t.id, mySlug);
       var dl = t.dienstleiter ? ('<br>Dienstleiter: ' + escapeHtml(t.dienstleiter)) : '';
       var urlaubHint = aufUrlaub ? '<p class="hint" style="color:var(--gold);margin-top:8px;">Automatisch als abwesend markiert (Urlaub eingetragen). Bei Bedarf oben überschreiben.</p>' : '';
       var card = document.createElement('div');
@@ -856,7 +896,7 @@
 
     html += '<div class="card">' +
       '<p class="section-title">Serientermine für einen Monat</p>' +
-      '<p class="termin-sub">Erstellt für jeden Mittwoch einen gemeinsamen Termin (19:30) und für jeden Sonntag je einen Termin pro Gemeinde (10:00). Bereits vorhandene Termine am selben Tag werden nicht doppelt angelegt.</p>' +
+      '<p class="termin-sub">Erstellt für jeden Mittwoch einen gemeinsamen Termin (19:30), für jeden Sonntag je einen Termin pro Gemeinde (10:00) sowie eine Ämterstunde (19:30) am Donnerstag nach dem ersten Sonntag des Monats, am jeweils anderen Ort als die Mittwochsgottesdienste. Bereits vorhandene Termine am selben Tag werden nicht doppelt angelegt.</p>' +
       '<label for="serMonth">Monat</label>' +
       '<select id="serMonth">' + monthOptionsHtml() + '</select>' +
       '<label for="serOrt">Ort der gemeinsamen Mittwochsgottesdienste</label>' +
@@ -882,6 +922,18 @@
       '<div id="admError" class="error-msg" style="display:none;"></div>' +
       '</div>';
 
+    html += '<div class="card">' +
+      '<p class="section-title">Dienstleiter Schnelleingabe</p>' +
+      '<p class="termin-sub">Monat wählen, dann die Dienstleiter zeilenweise eintragen – Zeile 1 gilt für den ersten Termin in der Liste unten, Zeile 2 für den zweiten usw. Eine leere Zeile löscht den bisherigen Dienstleiter des jeweiligen Termins.</p>' +
+      '<label for="dlMonth">Monat</label>' +
+      '<select id="dlMonth">' + dlMonthOptionsHtml() + '</select>' +
+      '<div id="dlListPreview"></div>' +
+      '<label for="dlNames">Dienstleiter (eine Zeile pro Termin, in der Reihenfolge der Liste oben)</label>' +
+      '<textarea id="dlNames" placeholder="Name Termin 1' + String.fromCharCode(10) + 'Name Termin 2' + String.fromCharCode(10) + '..."></textarea>' +
+      '<button class="btn-primary" id="dlSubmit">Übernehmen</button>' +
+      '<div id="dlMsg" class="hint" style="display:none;"></div>' +
+      '</div>';
+
     html += '<div class="card"><p class="section-title">Amtsträger</p><div id="amList"></div></div>';
 
     html += '<div class="card"><p class="section-title">Bestehende Termine</p><div id="admList"></div></div>';
@@ -902,6 +954,13 @@
     document.getElementById('serSubmit').addEventListener('click', createSeries);
     document.getElementById('admSubmit').addEventListener('click', createSingle);
     document.getElementById('resetAllBtn').addEventListener('click', resetAllData);
+
+    var dlMonthSel = document.getElementById('dlMonth');
+    if (dlMonthSel) {
+      renderDlPreview(dlMonthSel.value);
+      dlMonthSel.addEventListener('change', function(){ renderDlPreview(this.value); });
+      document.getElementById('dlSubmit').addEventListener('click', submitDlNames);
+    }
 
     renderAmtstraegerList();
     renderTermineList();
@@ -928,6 +987,58 @@
     });
   }
 
+  function dlMonthOptionsHtml(){
+    var set = {};
+    termine.forEach(function(t){ if (t.datum) set[t.datum.slice(0,7)] = true; });
+    var months = Object.keys(set).sort();
+    if (!months.length) return '<option value="">Keine Termine vorhanden</option>';
+    return months.map(function(m){
+      var p = m.split('-'); var mi = parseInt(p[1],10)-1;
+      return '<option value="' + m + '">' + (MONATSNAMEN[mi]||'') + ' ' + p[0] + '</option>';
+    }).join('');
+  }
+  function terminePerMonth(monthVal){
+    return termine.filter(function(t){ return (t.datum||'').slice(0,7) === monthVal; }).slice().sort(sortByDatumZeit);
+  }
+  function renderDlPreview(monthVal){
+    var el = document.getElementById('dlListPreview');
+    if (!el) return;
+    var list = terminePerMonth(monthVal);
+    if (!list.length) { el.innerHTML = '<p class="hint">Keine Termine in diesem Monat.</p>'; return; }
+    var html = '<ol class="dl-preview">';
+    list.forEach(function(t){
+      var f = fmtDatum(t.datum);
+      html += '<li>' + f.tag + ', ' + f.datum + (t.uhrzeit ? ' · ' + t.uhrzeit : '') + ' – ' + escapeHtml(t.bezeichnung||'') +
+        (t.dienstleiter ? ' (bisher: ' + escapeHtml(t.dienstleiter) + ')' : '') + '</li>';
+    });
+    html += '</ol>';
+    el.innerHTML = html;
+  }
+  function submitDlNames(){
+    var monthVal = document.getElementById('dlMonth').value;
+    var msg = document.getElementById('dlMsg');
+    var list = terminePerMonth(monthVal);
+    if (!monthVal || !list.length) { msg.textContent = 'Keine Termine in diesem Monat.'; msg.style.display = 'block'; return; }
+    var lines = document.getElementById('dlNames').value.split('\n').map(function(l){ return l.trim(); });
+    var extraHint = '';
+    if (lines.length > list.length) {
+      extraHint = 'Es wurden mehr Zeilen als Termine eingegeben – ' + (lines.length - list.length) + ' überzählige Zeile(n) wurden ignoriert. ';
+    }
+    var n = Math.min(lines.length, list.length);
+    var promises = [];
+    for (var i = 0; i < n; i++) {
+      promises.push(db.collection('termine').doc(list[i].id).update({ dienstleiter: lines[i] || null, updatedAt: new Date().toISOString() }));
+    }
+    Promise.all(promises).then(function(){
+      msg.textContent = extraHint + n + ' Dienstleiter wurden übernommen.';
+      msg.style.display = 'block';
+      document.getElementById('dlNames').value = '';
+      renderDlPreview(monthVal);
+    }).catch(function(){
+      msg.textContent = 'Beim Speichern ist ein Fehler aufgetreten.'; msg.style.display = 'block';
+    });
+  }
+
   function existsTermin(datum, gemeinde, gemeinsam){
     return termine.some(function(t){
       return t.datum === datum && !!t.gemeinsam === !!gemeinsam && (gemeinsam || t.gemeinde === gemeinde);
@@ -944,6 +1055,15 @@
     var seriesId = monthVal + '-serie';
     var toCreate = [];
     var today = todayIso();
+
+    // Ämterstunde: Donnerstag nach dem ersten Sonntag des Monats, am jeweils anderen Ort.
+    var firstSunday = new Date(year, month-1, 1);
+    while (firstSunday.getDay() !== 0) firstSunday.setDate(firstSunday.getDate()+1);
+    var amterDatumObj = new Date(firstSunday);
+    amterDatumObj.setDate(amterDatumObj.getDate()+4);
+    var amterIso = amterDatumObj.getFullYear() + '-' + String(amterDatumObj.getMonth()+1).padStart(2,'0') + '-' + String(amterDatumObj.getDate()).padStart(2,'0');
+    var amterOrt = ortVal === 'boele' ? 'hohenlimburg' : 'boele';
+
     var d = new Date(year, month-1, 1);
     while (d.getMonth() === month-1) {
       var iso = d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0');
@@ -962,6 +1082,10 @@
             toCreate.push({ datum: iso, uhrzeit:'10:00', bezeichnung:'Sonntagsgottesdienst', gemeinsam:false, gemeinde:g, ort:null, seriesId: seriesId });
           }
         });
+      } else if (iso === amterIso) {
+        if (!existsTermin(iso, null, true)) {
+          toCreate.push({ datum: iso, uhrzeit:'19:30', bezeichnung:'Ämterstunde', gemeinsam:true, gemeinde:null, ort:amterOrt, seriesId: seriesId });
+        }
       }
       d.setDate(d.getDate()+1);
     }
