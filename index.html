@@ -922,17 +922,7 @@
       '<div id="admError" class="error-msg" style="display:none;"></div>' +
       '</div>';
 
-    html += '<div class="card">' +
-      '<p class="section-title">Dienstleiter Schnelleingabe</p>' +
-      '<p class="termin-sub">Monat wählen, dann die Dienstleiter zeilenweise eintragen – Zeile 1 gilt für den ersten Termin in der Liste unten, Zeile 2 für den zweiten usw. Eine leere Zeile löscht den bisherigen Dienstleiter des jeweiligen Termins.</p>' +
-      '<label for="dlMonth">Monat</label>' +
-      '<select id="dlMonth">' + dlMonthOptionsHtml() + '</select>' +
-      '<div id="dlListPreview"></div>' +
-      '<label for="dlNames">Dienstleiter (eine Zeile pro Termin, in der Reihenfolge der Liste oben)</label>' +
-      '<textarea id="dlNames" placeholder="Name Termin 1' + String.fromCharCode(10) + 'Name Termin 2' + String.fromCharCode(10) + '..."></textarea>' +
-      '<button class="btn-primary" id="dlSubmit">Übernehmen</button>' +
-      '<div id="dlMsg" class="hint" style="display:none;"></div>' +
-      '</div>';
+    html += '<div id="dlBoxWrap"></div>';
 
     html += '<div class="card"><p class="section-title">Amtsträger</p><div id="amList"></div></div>';
 
@@ -955,13 +945,7 @@
     document.getElementById('admSubmit').addEventListener('click', createSingle);
     document.getElementById('resetAllBtn').addEventListener('click', resetAllData);
 
-    var dlMonthSel = document.getElementById('dlMonth');
-    if (dlMonthSel) {
-      renderDlPreview(dlMonthSel.value);
-      dlMonthSel.addEventListener('change', function(){ renderDlPreview(this.value); });
-      document.getElementById('dlSubmit').addEventListener('click', submitDlNames);
-    }
-
+    renderDlBox();
     renderAmtstraegerList();
     renderTermineList();
   }
@@ -987,6 +971,42 @@
     });
   }
 
+  var dlBoxOpen = false;
+  function terminOrt(t){
+    var key = t.gemeinsam ? t.ort : t.gemeinde;
+    return GEMEINDEN[key] || '';
+  }
+  function renderDlBox(){
+    var wrap = document.getElementById('dlBoxWrap');
+    if (!wrap) return;
+    wrap.innerHTML = '<div class="card ueb-card">' +
+      '<div class="ueb-head" id="dlBoxHead">' +
+        '<p class="section-title" style="margin-bottom:2px;">Dienstleiter Schnelleingabe</p>' +
+        '<p class="hint" style="margin:0;">Dienstleiter für einen ganzen Monat in einem Rutsch eintragen</p>' +
+        '<span class="ueb-toggle">' + (dlBoxOpen ? 'Einklappen ▴' : 'Aufklappen ▾') + '</span>' +
+      '</div>' +
+      '<div class="ueb-persons" id="dlBoxBody" style="display:' + (dlBoxOpen ? 'block' : 'none') + ';">' +
+        '<p class="termin-sub" style="margin-top:10px;">Monat wählen, dann die Dienstleiter zeilenweise eintragen – Zeile 1 gilt für den ersten Termin in der Liste unten, Zeile 2 für den zweiten usw. Eine leere Zeile löscht den bisherigen Dienstleiter des jeweiligen Termins.</p>' +
+        '<label for="dlMonth">Monat</label>' +
+        '<select id="dlMonth">' + dlMonthOptionsHtml() + '</select>' +
+        '<div id="dlListPreview"></div>' +
+        '<label for="dlNames">Dienstleiter (eine Zeile pro Termin, in der Reihenfolge der Liste oben)</label>' +
+        '<textarea id="dlNames" placeholder="Name Termin 1' + String.fromCharCode(10) + 'Name Termin 2' + String.fromCharCode(10) + '..."></textarea>' +
+        '<button class="btn-primary" id="dlSubmit">Übernehmen</button>' +
+        '<div id="dlMsg" class="hint" style="display:none;"></div>' +
+      '</div>' +
+    '</div>';
+    wrap.querySelector('#dlBoxHead').addEventListener('click', function(){
+      dlBoxOpen = !dlBoxOpen;
+      renderDlBox();
+    });
+    if (dlBoxOpen) {
+      var dlMonthSel = document.getElementById('dlMonth');
+      renderDlPreview(dlMonthSel.value);
+      dlMonthSel.addEventListener('change', function(){ renderDlPreview(this.value); });
+      document.getElementById('dlSubmit').addEventListener('click', submitDlNames);
+    }
+  }
   function dlMonthOptionsHtml(){
     var set = {};
     termine.forEach(function(t){ if (t.datum) set[t.datum.slice(0,7)] = true; });
@@ -1009,6 +1029,7 @@
     list.forEach(function(t){
       var f = fmtDatum(t.datum);
       html += '<li>' + f.tag + ', ' + f.datum + (t.uhrzeit ? ' · ' + t.uhrzeit : '') + ' – ' + escapeHtml(t.bezeichnung||'') +
+        ' · ' + escapeHtml(terminOrt(t)) +
         (t.dienstleiter ? ' (bisher: ' + escapeHtml(t.dienstleiter) + ')' : '') + '</li>';
     });
     html += '</ol>';
