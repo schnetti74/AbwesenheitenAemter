@@ -139,9 +139,11 @@
   .onb-box h1 { font-size:1.6rem; margin-bottom:8px; }
   .onb-box p { color:var(--ink-soft); font-size:0.92rem; line-height:1.5; }
   #onbPinWrap { margin-top: 4px; }
-  .gcard { display:flex; gap:8px; margin-top:6px; }
-  .gcard button { flex:1; padding:12px 6px; border-radius:9px; border:1px solid var(--border); background:var(--bg-alt); color:var(--ink); font-family:inherit; font-weight:600; font-size:0.9rem; cursor:pointer; }
+  .gcard { display:flex; flex-wrap:wrap; gap:8px; margin-top:6px; }
+  .gcard button { flex:1 1 90px; padding:12px 6px; border-radius:9px; border:1px solid var(--border); background:var(--bg-alt); color:var(--ink); font-family:inherit; font-weight:600; font-size:0.9rem; cursor:pointer; }
   .gcard button.sel { background:var(--ink); color:var(--bg); border-color:var(--ink); }
+  .gcard button:disabled { opacity:0.35; cursor:not-allowed; }
+  .tag.beide { background:var(--amber-bg); color:var(--amber); }
   #setupNotice { background:var(--red-bg); color:var(--red); border:1px solid var(--red); border-radius:10px; padding:12px 14px; font-size:0.85rem; margin:16px; }
 </style>
 </head>
@@ -156,10 +158,12 @@
     <p>Trage deinen Namen ein und wähle deine Gemeinde sowie dein Amt, um Gottesdienste als anwesend oder abwesend zu markieren.</p>
     <label for="nameInput">Name</label>
     <input type="text" id="nameInput" placeholder="Vor- und Nachname" autocomplete="name">
+    <p id="onbTerminverwalterHint" class="hint" style="display:none;">Dieser Name ist für die reine Terminverwaltung reserviert – Gemeinde, Amt und Administrator werden nicht benötigt und sind deaktiviert. Nach dem Anmelden ist nur der Tab „Termine" verfügbar.</p>
     <label>Gemeinde</label>
     <div class="gcard">
       <button type="button" id="gBoele" data-g="boele">Boele</button>
       <button type="button" id="gHohenlimburg" data-g="hohenlimburg">Hohenlimburg</button>
+      <button type="button" id="gBeide" data-g="beide">Beide</button>
     </div>
     <label>Amt</label>
     <div class="gcard">
@@ -256,12 +260,17 @@
       '<code>firebaseConfig</code> am Anfang des Skripts mit den eigenen Firebase-Zugangsdaten ausfüllen.</div>';
   }
 
-  var GEMEINDEN = { boele: 'Boele', hohenlimburg: 'Hohenlimburg' };
+  var GEMEINDEN = { boele: 'Boele', hohenlimburg: 'Hohenlimburg', beide: 'Beide Gemeinden' };
   var ROLLEN = { diakon: 'Diakon', priester: 'Priester' };
 
   // Feste Namensliste (genau wie beim Anmelden eingegeben): nur diese Personen
   // bekommen Zugriff auf den Tab "Auswertung".
   var AUSWERTUNG_ALLOWED_NAMES = ['Matthias Schnettler'];
+
+  // Reservierter Name für den reinen Terminverwaltungs-Zugang (kein Amtsträger,
+  // keine Gemeinde/Amt, nur der Tab "Termine"). Kann hier umbenannt werden.
+  var TERMINVERWALTER_NAME = 'Terminverwaltung';
+  var isTerminverwalter = false;
 
   var myName = null, mySlug = null, myGemeinde = null, myRolle = null;
   var termine = [];
@@ -279,6 +288,19 @@
   var selectedOnboardA = 'nein';
   var adminUnlocked = false;
 
+  function isTerminverwalterName(name){
+    return slugify(name) === slugify(TERMINVERWALTER_NAME);
+  }
+  // Personen mit gemeinde==='beide' (z.B. Karsten Hilgert) gehören zu beiden
+  // Gemeinden gleichzeitig. Diese beiden Helfer kapseln die Sonderbehandlung.
+  function colsForGemeindeFilter(filterVal){
+    if (filterVal === 'beide') return amtstraeger.slice();
+    return amtstraeger.filter(function(a){ return a.gemeinde === filterVal || a.gemeinde === 'beide'; });
+  }
+  function terminMatchesGemeindeFilter(t, filterVal){
+    if (filterVal === 'beide') return true;
+    return !!t.gemeinsam || t.gemeinde === filterVal;
+  }
   function slugify(s){
     return (s||'').trim().toLowerCase()
       .normalize('NFD').replace(/[\u0300-\u036f]/g,'')
@@ -315,8 +337,8 @@
   }
 
   // ---------- onboarding ----------
-  var savedName = null, savedGemeinde = null, savedRolle = null, savedIsAdmin = null;
-  try { savedName = localStorage.getItem('dp_name'); savedGemeinde = localStorage.getItem('dp_gemeinde'); savedRolle = localStorage.getItem('dp_rolle'); savedIsAdmin = localStorage.getItem('dp_isadmin'); } catch(e){}
+  var savedName = null, savedGemeinde = null, savedRolle = null, savedIsAdmin = null, savedTerminverwalter = null;
+  try { savedName = localStorage.getItem('dp_name'); savedGemeinde = localStorage.getItem('dp_gemeinde'); savedRolle = localStorage.getItem('dp_rolle'); savedIsAdmin = localStorage.getItem('dp_isadmin'); savedTerminverwalter = localStorage.getItem('dp_terminverwalter'); } catch(e){}
 
   function showOnboarding(){
     document.getElementById('onboarding').style.display = 'flex';
@@ -327,24 +349,54 @@
     document.getElementById('appWrap').style.display = 'block';
     document.getElementById('whoName').textContent = myName;
     var wg = document.getElementById('whoGemeinde');
-    wg.textContent = GEMEINDEN[myGemeinde] || '';
-    wg.className = 'tag ' + myGemeinde;
+    if (myGemeinde) { wg.textContent = GEMEINDEN[myGemeinde] || ''; wg.className = 'tag ' + myGemeinde; wg.style.display = ''; }
+    else { wg.style.display = 'none'; }
     var wr = document.getElementById('whoRolle');
-    wr.textContent = ROLLEN[myRolle] || '';
-    wr.className = 'tag gemeinsam';
+    if (myRolle) { wr.textContent = ROLLEN[myRolle] || ''; wr.className = 'tag gemeinsam'; wr.style.display = ''; }
+    else { wr.style.display = 'none'; }
     var termineTabBtn = document.querySelector('.tab-btn[data-tab="admin"]');
     if (termineTabBtn) termineTabBtn.style.display = adminUnlocked ? '' : 'none';
     var auswertungTabBtn = document.querySelector('.tab-btn[data-tab="auswertung"]');
-    if (auswertungTabBtn) auswertungTabBtn.style.display = auswertungUnlocked ? '' : 'none';
+    if (auswertungTabBtn) auswertungTabBtn.style.display = (auswertungUnlocked && !isTerminverwalter) ? '' : 'none';
+    ['meine','uebersicht','urlaub'].forEach(function(tabName){
+      var btn = document.querySelector('.tab-btn[data-tab="' + tabName + '"]');
+      if (btn) btn.style.display = isTerminverwalter ? 'none' : '';
+    });
+    if (isTerminverwalter) {
+      document.querySelectorAll('.tab-btn').forEach(function(b){ b.classList.remove('active'); });
+      var admBtn = document.querySelector('.tab-btn[data-tab="admin"]');
+      if (admBtn) admBtn.classList.add('active');
+      document.querySelectorAll('.view').forEach(function(v){ v.classList.remove('active'); });
+      var admView = document.getElementById('view-admin');
+      if (admView) admView.classList.add('active');
+      activeTab = 'admin';
+      renderAdmin();
+    }
     buildUebFilter();
   }
 
+  function updateTerminverwalterUI(){
+    var v = document.getElementById('nameInput').value;
+    var isTV = isTerminverwalterName(v);
+    ['gBoele','gHohenlimburg','gBeide','rDiakon','rPriester','aJa','aNein'].forEach(function(id){
+      var btn = document.getElementById(id);
+      if (btn) btn.disabled = isTV;
+    });
+    document.getElementById('onbTerminverwalterHint').style.display = isTV ? 'block' : 'none';
+    if (isTV) {
+      selectG(null); selectR(null); selectA('nein');
+    }
+  }
+  document.getElementById('nameInput').addEventListener('input', updateTerminverwalterUI);
+
   document.getElementById('gBoele').addEventListener('click', function(){ selectG('boele'); });
   document.getElementById('gHohenlimburg').addEventListener('click', function(){ selectG('hohenlimburg'); });
+  document.getElementById('gBeide').addEventListener('click', function(){ selectG('beide'); });
   function selectG(g){
     selectedOnboardG = g;
     document.getElementById('gBoele').classList.toggle('sel', g==='boele');
     document.getElementById('gHohenlimburg').classList.toggle('sel', g==='hohenlimburg');
+    document.getElementById('gBeide').classList.toggle('sel', g==='beide');
   }
   document.getElementById('rDiakon').addEventListener('click', function(){ selectR('diakon'); });
   document.getElementById('rPriester').addEventListener('click', function(){ selectR('priester'); });
@@ -379,13 +431,30 @@
       localStorage.setItem('dp_gemeinde', selectedOnboardG);
       localStorage.setItem('dp_rolle', selectedOnboardR);
       localStorage.setItem('dp_isadmin', isAdmin ? '1' : '0');
+      localStorage.removeItem('dp_terminverwalter');
     } catch(e){}
     adminUnlocked = isAdmin;
     initPerson(v, selectedOnboardG, selectedOnboardR);
   }
+  function finishOnboardingTerminverwalter(v){
+    try {
+      localStorage.setItem('dp_name', v);
+      localStorage.setItem('dp_gemeinde', '');
+      localStorage.setItem('dp_rolle', '');
+      localStorage.setItem('dp_isadmin', '1');
+      localStorage.setItem('dp_terminverwalter', '1');
+    } catch(e){}
+    adminUnlocked = true;
+    initPerson(v, null, null);
+  }
   document.getElementById('startBtn').addEventListener('click', function(){
     var v = document.getElementById('nameInput').value.trim();
-    if (!v || !selectedOnboardG || !selectedOnboardR) return;
+    if (!v) return;
+    if (isTerminverwalterName(v)) {
+      finishOnboardingTerminverwalter(v);
+      return;
+    }
+    if (!selectedOnboardG || !selectedOnboardR) return;
     if (selectedOnboardA === 'ja') {
       var pin = document.getElementById('onbAdminPin').value.trim();
       var perr = document.getElementById('onbPinError');
@@ -404,14 +473,16 @@
     try {
       localStorage.removeItem('dp_name'); localStorage.removeItem('dp_gemeinde');
       localStorage.removeItem('dp_rolle'); localStorage.removeItem('dp_isadmin');
+      localStorage.removeItem('dp_terminverwalter');
     } catch(e){}
-    myName = null; mySlug = null; myGemeinde = null; myRolle = null; adminUnlocked = false;
+    myName = null; mySlug = null; myGemeinde = null; myRolle = null; adminUnlocked = false; isTerminverwalter = false;
     selectedOnboardG = null; selectedOnboardR = null;
     document.getElementById('nameInput').value = '';
     document.getElementById('onbAdminPin').value = '';
     selectG(null);
     selectR(null);
     selectA('nein');
+    updateTerminverwalterUI();
     showOnboarding();
   });
 
@@ -431,9 +502,10 @@
   // ---------- data ----------
   function initPerson(name, gemeinde, rolle){
     myName = name; mySlug = slugify(name); myGemeinde = gemeinde; myRolle = rolle;
-    auswertungUnlocked = AUSWERTUNG_ALLOWED_NAMES.map(slugify).indexOf(mySlug) !== -1;
+    isTerminverwalter = isTerminverwalterName(name);
+    auswertungUnlocked = !isTerminverwalter && AUSWERTUNG_ALLOWED_NAMES.map(slugify).indexOf(mySlug) !== -1;
     showApp();
-    if (!db) return;
+    if (!db || isTerminverwalter) return;
     db.collection('amtstraeger').doc(mySlug).get().then(function(snap){
       if (!snap.exists) {
         db.collection('amtstraeger').doc(mySlug).set({ name: myName, gemeinde: myGemeinde, rolle: myRolle, createdAt: new Date().toISOString() }).catch(function(){});
@@ -551,7 +623,7 @@
       // manuell gesetzte/überschriebene Status bleiben unangetastet.
       termine.forEach(function(t){
         if ((t.datum||'') < u.von || (t.datum||'') > u.bis) return;
-        if (!t.gemeinsam && t.gemeinde !== u.gemeinde) return;
+        if (!terminMatchesGemeindeFilter(t, u.gemeinde)) return;
         var docId = t.id + '__' + u.amtstraegerId;
         var s = statusList.find(function(x){ return x.id === docId; });
         if (s && s.autoUrlaub) {
@@ -565,7 +637,7 @@
     termine.forEach(function(t){
       urlaubList.forEach(function(u){
         if ((t.datum||'') < u.von || (t.datum||'') > u.bis) return;
-        if (!t.gemeinsam && t.gemeinde !== u.gemeinde) return;
+        if (!terminMatchesGemeindeFilter(t, u.gemeinde)) return;
         var docId = t.id + '__' + u.amtstraegerId;
         var already = statusList.some(function(s){ return s.id === docId; });
         if (already) return;
@@ -590,7 +662,7 @@
     if (!myName) return;
     var today = todayIso();
     var relevant = termine.filter(function(t){
-      return (t.datum||'') >= today && (t.gemeinsam || t.gemeinde === myGemeinde);
+      return (t.datum||'') >= today && terminMatchesGemeindeFilter(t, myGemeinde);
     });
     if (!relevant.length) {
       el.innerHTML = '<div class="empty">Keine anstehenden Termine für deine Gemeinde.</div>';
@@ -821,7 +893,7 @@
   function renderUrlaub(){
     var el = document.getElementById('urlaubWrap');
     if (!myGemeinde) return;
-    var cols = amtstraeger.filter(function(a){ return a.gemeinde === urlFilter; });
+    var cols = colsForGemeindeFilter(urlFilter);
     cols.sort(function(a,b){
       var ra = a.rolle === 'priester' ? 0 : 1;
       var rb = b.rolle === 'priester' ? 0 : 1;
@@ -850,7 +922,9 @@
     return null;
   }
   function terminAppliesTo(t, amt){
-    return !!t.gemeinsam || t.gemeinde === amt.gemeinde;
+    if (t.gemeinsam) return true;
+    if (amt.gemeinde === 'beide') return true;
+    return t.gemeinde === amt.gemeinde;
   }
   function isCountableTermin(t){
     if (!t.datum || t.datum > todayIso()) return false;
@@ -931,7 +1005,7 @@
     if (!db) { el.innerHTML = '<div class="empty">Firebase ist noch nicht eingerichtet.</div>'; return; }
 
     var data = buildAuswertungData();
-    var cols = amtstraeger.filter(function(a){ return a.gemeinde === auswFilter; });
+    var cols = colsForGemeindeFilter(auswFilter);
     cols.sort(function(a,b){
       var ra = a.rolle === 'priester' ? 0 : 1;
       var rb = b.rolle === 'priester' ? 0 : 1;
@@ -1026,11 +1100,11 @@
     var el = document.getElementById('uebersichtWrap');
     var today = todayIso();
     var rows = termine.filter(function(t){
-      return (t.datum||'') >= today && ((t.gemeinsam) || (!t.gemeinsam && t.gemeinde === uebFilter));
+      return (t.datum||'') >= today && terminMatchesGemeindeFilter(t, uebFilter);
     });
-    var cols = amtstraeger.filter(function(a){ return a.gemeinde === uebFilter; });
-    var otherGemeinde = uebFilter === 'boele' ? 'hohenlimburg' : 'boele';
-    var otherCols = amtstraeger.filter(function(a){ return a.gemeinde === otherGemeinde; });
+    var cols = colsForGemeindeFilter(uebFilter);
+    var otherGemeinde = uebFilter === 'boele' ? 'hohenlimburg' : (uebFilter === 'hohenlimburg' ? 'boele' : null);
+    var otherCols = otherGemeinde ? amtstraeger.filter(function(a){ return a.gemeinde === otherGemeinde; }) : [];
     if (!rows.length || !cols.length) {
       el.innerHTML = '<div class="empty">Noch keine Daten für diese Auswahl.</div>';
       return;
@@ -1039,7 +1113,7 @@
     var html = '';
     rows.forEach(function(t){
       var f = fmtDatum(t.datum);
-      var rowCols = t.gemeinsam ? cols.concat(otherCols) : cols;
+      var rowCols = (t.gemeinsam && otherGemeinde) ? cols.concat(otherCols) : cols;
       var rc = countRoles(t, rowCols);
       var dlHint = t.dienstleiter ? (' · Dienstleiter: ' + escapeHtml(t.dienstleiter)) : '';
       html += '<div class="card ueb-card">' +
@@ -1432,7 +1506,7 @@
       var right = document.createElement('span');
       right.style.display = 'flex'; right.style.gap = '6px'; right.style.alignItems = 'center'; right.style.flexWrap = 'wrap';
       var selG = document.createElement('select');
-      selG.innerHTML = '<option value="boele">Boele</option><option value="hohenlimburg">Hohenlimburg</option>';
+      selG.innerHTML = '<option value="boele">Boele</option><option value="hohenlimburg">Hohenlimburg</option><option value="beide">Beide Gemeinden</option>';
       selG.value = g.gemeinde;
       selG.addEventListener('change', function(){
         db.collection('amtstraeger').doc(g.id).update({ gemeinde: selG.value }).catch(function(){});
@@ -1457,7 +1531,10 @@
   // ---------- boot ----------
   function boot(){
     if (db) subscribeAll();
-    if (savedName && savedGemeinde && savedRolle) {
+    if (savedTerminverwalter === '1' && savedName) {
+      adminUnlocked = true;
+      initPerson(savedName, null, null);
+    } else if (savedName && savedGemeinde && savedRolle) {
       adminUnlocked = savedIsAdmin === '1';
       initPerson(savedName, savedGemeinde, savedRolle);
     } else {
