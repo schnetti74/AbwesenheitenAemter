@@ -297,6 +297,10 @@
   // bekommen Zugriff auf den Tab "Auswertung".
   var AUSWERTUNG_ALLOWED_NAMES = ['Matthias Schnettler'];
 
+  // Tabellenansicht (Excel-Stil) samt Export im Urlaub-Tab: nur für Administratoren
+  // und die hier aufgeführten Personen (Name genau wie beim Anmelden eingegeben).
+  var URLAUB_TABELLE_ALLOWED_NAMES = ['Karsten Hilgert'];
+
   // Reservierter Name für den reinen Terminverwaltungs-Zugang (kein Amtsträger,
   // keine Gemeinde/Amt, nur der Tab "Termine"). Kann hier umbenannt werden.
   var TERMINVERWALTER_NAME = 'Termine';
@@ -1047,10 +1051,21 @@
     '</div>';
   }
 
+  function canUseUrlaubTabelle(){
+    if (adminUnlocked) return true;
+    return !!mySlug && URLAUB_TABELLE_ALLOWED_NAMES.map(slugify).indexOf(mySlug) !== -1;
+  }
+
   function buildUrlView(){
     var wrap = document.getElementById('urlView');
     if (!wrap) return;
     wrap.innerHTML = '';
+    if (!canUseUrlaubTabelle()) {
+      urlView = 'balken';
+      wrap.style.display = 'none';
+      return;
+    }
+    wrap.style.display = '';
     [{ v: 'balken', label: 'Balken' }, { v: 'tabelle', label: 'Tabelle' }].forEach(function(b){
       var btn = document.createElement('button');
       btn.type = 'button';
@@ -1194,6 +1209,7 @@
   }
 
   function exportUrlaubExcel(btn, msg){
+    if (!canUseUrlaubTabelle()) return;
     var cols = urlCols();
     if (!cols.length) return;
     var years = relevantYears(cols);
@@ -1230,6 +1246,7 @@
   function renderUrlaub(){
     var el = document.getElementById('urlaubWrap');
     if (!myGemeinde || activeTab !== 'urlaub') return;
+    if (urlView === 'tabelle' && !canUseUrlaubTabelle()) urlView = 'balken';
     var cols = urlCols();
     if (!cols.length) {
       el.innerHTML = '<div class="empty">Noch keine Amtsträger für diese Gemeinde eingetragen.</div>';
