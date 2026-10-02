@@ -88,13 +88,42 @@
   .person-name { flex:1; font-size:0.85rem; }
   .person-status { font-size:0.76rem; color:var(--ink-soft); }
   .person-bem { font-size:0.8rem; color:var(--ink-soft); font-style:italic; padding:0 0 7px 30px; }
-  .ur-chart { overflow-x:auto; }
-  .ur-months { display:flex; padding-left:98px; margin:10px 0 4px; min-width:340px; }
-  .ur-months span { flex:1; font-size:0.66rem; color:var(--ink-soft); }
-  .ur-row { display:flex; align-items:center; gap:8px; padding:6px 0; border-top:1px solid var(--border); min-width:340px; }
-  .ur-name { width:90px; flex-shrink:0; font-size:0.78rem; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .ur-card { padding-left:12px; padding-right:12px; }
+  .ur-export { margin-bottom:12px; }
+  .ur-export .btn-secondary { padding:9px 12px; font-size:0.82rem; font-weight:600; color:var(--ink); }
+  @media (orientation:landscape) and (max-height:520px) {
+    header.top { position:static; padding-top:10px; }
+  }
+  .ur-top { display:flex; align-items:center; justify-content:space-between; gap:8px; }
+  .ur-top select { width:auto; padding:6px 8px; font-size:0.8rem; }
+  .ur-legend { display:flex; flex-wrap:wrap; gap:4px 14px; font-size:0.72rem; color:var(--ink-soft); margin:8px 0 2px; }
+  .ur-legend .sw { display:inline-block; width:10px; height:10px; border-radius:2px; margin-right:5px; vertical-align:-1px; }
+  .ur-scroll { overflow-x:auto; -webkit-overflow-scrolling:touch; margin-top:6px; }
+  .ur-inner { min-width:100%; }
+  @media (max-width:640px) { .ur-inner.bars { min-width:760px; } }
+  .ur-line { display:flex; align-items:center; gap:8px; }
+  .ur-head { margin:4px 0 4px; }
+  .ur-row { padding:6px 0; border-top:1px solid var(--border); }
+  .ur-name { width:90px; flex-shrink:0; font-size:0.78rem; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; position:sticky; left:0; z-index:3; background:var(--card); }
   .ur-track { position:relative; flex:1; height:18px; background:var(--bg-alt); border-radius:4px; }
-  .ur-bar { position:absolute; top:0; height:100%; background:var(--gold-strong); border-radius:4px; min-width:3px; }
+  .ur-months-track { position:relative; flex:1; height:14px; }
+  .ur-months-track span { position:absolute; top:0; font-size:0.66rem; color:var(--ink-soft); padding-left:3px; }
+  .ur-mline { position:absolute; top:0; bottom:0; border-left:1px dashed var(--ink-soft); opacity:0.55; pointer-events:none; }
+  .ur-bar { position:absolute; top:0; height:100%; background:var(--gold-strong); border-radius:3px; min-width:3px; }
+  .ur-bar.ov { background:var(--red); }
+  .ur-table { border-collapse:separate; border-spacing:0; table-layout:fixed; font-size:0.68rem; }
+  .ur-table th, .ur-table td { padding:0; height:24px; text-align:center; border-right:1px solid var(--border); border-bottom:1px solid var(--border); overflow:hidden; }
+  .ur-table thead th { background:var(--bg-alt); color:var(--ink-soft); font-weight:600; }
+  .ur-table thead th.mh { text-align:left; padding-left:6px; background:var(--green-bg); color:var(--green); }
+  .ur-table th.nm, .ur-table td.nm { position:sticky; left:0; z-index:2; background:var(--card); text-align:left; padding:0 6px; font-size:0.76rem; white-space:nowrap; text-overflow:ellipsis; border-right:2px solid var(--ink-soft); }
+  .ur-table thead th.nm { background:var(--bg-alt); }
+  .ur-table .ms { border-left:2px solid var(--ink-soft); }
+  .ur-table td.we, .ur-table thead th.we { background:var(--gray-bg); }
+  .ur-table td.u { background:var(--gold-strong); color:var(--card); font-weight:700; }
+  .ur-table td.u.ov { background:var(--red); }
+  .ur-table td.cnt { color:var(--ink-soft); font-weight:600; }
+  .ur-table td.cnt.hi { background:var(--red); color:var(--card); }
+  .ur-table tr.sumrow td { border-top:2px solid var(--ink-soft); }
   label { display:block; font-size:0.78rem; font-weight:600; color:var(--ink-soft); margin:12px 0 5px; }
   label:first-child { margin-top:0; }
   input[type=text], input[type=date], input[type=time], input[type=password], input[type=month], select, textarea {
@@ -213,6 +242,7 @@
 
   <section class="view" id="view-urlaub">
     <div class="filter-row" id="urlFilter"></div>
+    <div class="filter-row" id="urlView"></div>
     <div id="urlaubWrap"></div>
   </section>
 
@@ -280,6 +310,9 @@
   var activeTab = 'meine';
   var uebFilter = 'boele';
   var urlFilter = 'boele';
+  var urlView = 'balken';
+  var urlScrollPos = {};
+  var urlScrollBound = false;
   var auswFilter = 'boele';
   var auswScope = 'gesamt';
   var auswertungUnlocked = false;
@@ -495,7 +528,7 @@
       document.getElementById('view-' + activeTab).classList.add('active');
       if (activeTab === 'admin') renderAdmin();
       if (activeTab === 'uebersicht') { buildUebFilter(); renderUebersicht(); }
-      if (activeTab === 'urlaub') { buildUrlFilter(); renderUrlaub(); }
+      if (activeTab === 'urlaub') { buildUrlFilter(); buildUrlView(); renderUrlaub(); }
       if (activeTab === 'auswertung') { renderAuswertung(); }
     });
   });
@@ -833,7 +866,7 @@
   function dayOfYear(iso){
     var d = new Date(iso + 'T00:00:00');
     var start = new Date(d.getFullYear(), 0, 1);
-    return Math.floor((d - start) / 86400000) + 1;
+    return Math.round((d - start) / 86400000) + 1;
   }
   function isLeapYear(y){ return (y % 4 === 0 && y % 100 !== 0) || y % 400 === 0; }
 
@@ -854,45 +887,204 @@
     return Object.keys(years).map(Number).sort(function(a,b){ return a-b; });
   }
 
-  function yearChartHtml(year, cols){
-    var daysInYear = isLeapYear(year) ? 366 : 365;
-    var yearStart = year + '-01-01', yearEnd = year + '-12-31';
+  // ---------- Urlaub: Daten, Balken- und Tabellenansicht ----------
+  function pad2(n){ return String(n).padStart(2,'0'); }
+  function monthStartIdx(year, m){
+    return Math.round((Date.UTC(year, m, 1) - Date.UTC(year, 0, 1)) / 86400000);
+  }
+  function daysInMonth(year, m){ return new Date(Date.UTC(year, m + 1, 0)).getUTCDate(); }
+  function idxDate(year, i){
+    var d = new Date(Date.UTC(year, 0, 1 + i));
+    return pad2(d.getUTCDate()) + '.' + pad2(d.getUTCMonth() + 1) + '.' + d.getUTCFullYear();
+  }
+  function idxWeekday(year, i){ return new Date(Date.UTC(year, 0, 1 + i)).getUTCDay(); }
 
-    var monthLine = '<div class="ur-months">';
-    for (var m = 0; m < 12; m++) {
-      monthLine += '<span>' + MONATSKUERZEL[m] + '</span>';
-    }
-    monthLine += '</div>';
-
-    var rows = '';
+  // Pro Person ein Tages-Array (Urlaub ja/nein) plus Zähler, wie viele Personen je Tag Urlaub haben.
+  function vacationData(year, cols){
+    var n = isLeapYear(year) ? 366 : 365;
+    var ys = year + '-01-01', ye = year + '-12-31';
+    var per = {}, counts = [];
+    for (var k = 0; k < n; k++) counts.push(0);
     cols.forEach(function(g){
-      var ranges = urlaubList.filter(function(u){
-        return u.amtstraegerId === g.id && u.bis >= yearStart && u.von <= yearEnd;
+      var arr = [];
+      for (var k2 = 0; k2 < n; k2++) arr.push(false);
+      urlaubList.forEach(function(u){
+        if (u.amtstraegerId !== g.id || !u.von || !u.bis || u.bis < ys || u.von > ye) return;
+        var s = dayOfYear(u.von < ys ? ys : u.von) - 1;
+        var e = dayOfYear(u.bis > ye ? ye : u.bis) - 1;
+        for (var i = s; i <= e; i++) arr[i] = true;
       });
-      var bars = '';
-      ranges.forEach(function(u){
-        var von = u.von < yearStart ? yearStart : u.von;
-        var bis = u.bis > yearEnd ? yearEnd : u.bis;
-        var startPct = ((dayOfYear(von) - 1) / daysInYear) * 100;
-        var widthPct = Math.max(((dayOfYear(bis) - dayOfYear(von) + 1) / daysInYear) * 100, 0.8);
-        var fv = fmtDatum(u.von), fb = fmtDatum(u.bis);
-        bars += '<div class="ur-bar" style="left:' + startPct.toFixed(2) + '%;width:' + widthPct.toFixed(2) + '%;" title="' + escapeHtml(g.name) + ': ' + fv.datum + ' – ' + fb.datum + '"></div>';
-      });
-      rows += '<div class="ur-row">' +
-        '<div class="ur-name">' + escapeHtml(g.name) + '</div>' +
-        '<div class="ur-track">' + bars + '</div>' +
-      '</div>';
+      per[g.id] = arr;
+      for (var i2 = 0; i2 < n; i2++) if (arr[i2]) counts[i2]++;
     });
+    return { n: n, per: per, counts: counts };
+  }
 
-    return '<div class="card ur-chart">' +
-      '<p class="section-title">Urlaub ' + year + ' · ' + (GEMEINDEN[urlFilter]||'') + '</p>' +
-      monthLine + rows +
+  function urlLegendHtml(withWeekend){
+    return '<div class="ur-legend">' +
+      '<span><i class="sw" style="background:var(--gold-strong);"></i>Urlaub</span>' +
+      '<span><i class="sw" style="background:var(--red);"></i>Überschneidung (mind. 2 Personen)</span>' +
+      (withWeekend ? '<span><i class="sw" style="background:var(--gray-bg);border:1px solid var(--border);"></i>Wochenende</span>' : '') +
       '</div>';
   }
 
-  function renderUrlaub(){
-    var el = document.getElementById('urlaubWrap');
-    if (!myGemeinde) return;
+  function barsHtml(year, g, vd){
+    var arr = vd.per[g.id], n = vd.n, out = '', i = 0;
+    while (i < n) {
+      if (!arr[i]) { i++; continue; }
+      var ov = vd.counts[i] >= 2, s = i;
+      while (i < n && arr[i] && (vd.counts[i] >= 2) === ov) i++;
+      var e = i - 1;
+      var left = (s / n) * 100;
+      var width = Math.max(((e - s + 1) / n) * 100, 0.8);
+      out += '<div class="ur-bar' + (ov ? ' ov' : '') + '" style="left:' + left.toFixed(2) + '%;width:' + width.toFixed(2) + '%;" title="' +
+        escapeHtml(g.name) + ': ' + idxDate(year, s) + ' – ' + idxDate(year, e) + (ov ? ' · Überschneidung' : '') + '"></div>';
+    }
+    return out;
+  }
+
+  function monthLinesHtml(year, n){
+    var out = '';
+    for (var m = 1; m < 12; m++) {
+      out += '<div class="ur-mline" style="left:' + ((monthStartIdx(year, m) / n) * 100).toFixed(3) + '%;"></div>';
+    }
+    return out;
+  }
+
+  function yearChartHtml(year, cols){
+    var vd = vacationData(year, cols);
+    var n = vd.n;
+    var lines = monthLinesHtml(year, n);
+
+    var monthLabels = '';
+    for (var m = 0; m < 12; m++) {
+      monthLabels += '<span style="left:' + ((monthStartIdx(year, m) / n) * 100).toFixed(3) + '%;">' + MONATSKUERZEL[m] + '</span>';
+    }
+    var head = '<div class="ur-line ur-head"><div class="ur-name"></div>' +
+      '<div class="ur-months-track">' + lines + monthLabels + '</div></div>';
+
+    var rows = '';
+    cols.forEach(function(g){
+      rows += '<div class="ur-line ur-row">' +
+        '<div class="ur-name" title="' + escapeHtml(g.name) + '">' + escapeHtml(g.name) + '</div>' +
+        '<div class="ur-track">' + lines + barsHtml(year, g, vd) + '</div>' +
+      '</div>';
+    });
+
+    return '<div class="card ur-card">' +
+      '<p class="section-title">Urlaub ' + year + ' · ' + (GEMEINDEN[urlFilter]||'') + '</p>' +
+      urlLegendHtml(false) +
+      '<div class="ur-scroll" data-skey="balken-' + year + '" data-year="' + year + '" data-kind="balken">' +
+        '<div class="ur-inner bars">' + head + rows + '</div>' +
+      '</div>' +
+    '</div>';
+  }
+
+  function yearTableHtml(year, cols){
+    var vd = vacationData(year, cols);
+    var n = vd.n;
+    var NAMEW = 112, CELLW = 20;
+
+    var isMS = [];
+    for (var i = 0; i < n; i++) isMS.push(false);
+    for (var m0 = 1; m0 < 12; m0++) isMS[monthStartIdx(year, m0)] = true;
+    var isWE = [];
+    for (var i2 = 0; i2 < n; i2++) { var wd = idxWeekday(year, i2); isWE.push(wd === 0 || wd === 6); }
+
+    var h1 = '<tr><th class="nm" rowspan="2">Name</th>';
+    var h2 = '<tr>';
+    for (var m = 0; m < 12; m++) {
+      var dim = daysInMonth(year, m);
+      h1 += '<th class="mh' + (m > 0 ? ' ms' : '') + '" colspan="' + dim + '" data-m="' + m + '">' + MONATSNAMEN[m] + '</th>';
+      var base = monthStartIdx(year, m);
+      for (var d = 0; d < dim; d++) {
+        var idx = base + d;
+        h2 += '<th class="' + (isWE[idx] ? 'we' : '') + (d === 0 && m > 0 ? ' ms' : '') + '">' + (d + 1) + '</th>';
+      }
+    }
+    h1 += '</tr>'; h2 += '</tr>';
+
+    var body = '';
+    cols.forEach(function(g){
+      var arr = vd.per[g.id];
+      var cells = [];
+      for (var i3 = 0; i3 < n; i3++) {
+        var cls = [];
+        if (isWE[i3]) cls.push('we');
+        if (isMS[i3]) cls.push('ms');
+        var txt = '';
+        if (arr[i3]) { cls.push('u'); txt = 'x'; if (vd.counts[i3] >= 2) cls.push('ov'); }
+        cells.push('<td' + (cls.length ? ' class="' + cls.join(' ') + '"' : '') + '>' + txt + '</td>');
+      }
+      body += '<tr><td class="nm" title="' + escapeHtml(g.name) + '">' + escapeHtml(g.name) + '</td>' + cells.join('') + '</tr>';
+    });
+
+    var sum = '<tr class="sumrow"><td class="nm">Anzahl</td>';
+    var sc = [];
+    for (var i4 = 0; i4 < n; i4++) {
+      var c = vd.counts[i4];
+      var cl = ['cnt'];
+      if (isWE[i4]) cl.push('we');
+      if (isMS[i4]) cl.push('ms');
+      if (c >= 2) cl.push('hi');
+      sc.push('<td class="' + cl.join(' ') + '">' + (c > 0 ? c : '') + '</td>');
+    }
+    sum += sc.join('') + '</tr>';
+
+    var jump = '<select class="ur-jump" aria-label="Zu Monat springen"><option value="">Springe zu …</option>';
+    for (var mj = 0; mj < 12; mj++) jump += '<option value="' + mj + '">' + MONATSNAMEN[mj] + '</option>';
+    jump += '</select>';
+
+    return '<div class="card ur-card">' +
+      '<div class="ur-top"><p class="section-title" style="margin:0;">Urlaub ' + year + ' · ' + (GEMEINDEN[urlFilter]||'') + '</p>' + jump + '</div>' +
+      urlLegendHtml(true) +
+      '<div class="ur-scroll" data-skey="tabelle-' + year + '" data-year="' + year + '" data-kind="tabelle">' +
+        '<table class="ur-table" style="width:' + (NAMEW + n * CELLW) + 'px;">' +
+          '<colgroup><col style="width:' + NAMEW + 'px"><col span="' + n + '" style="width:' + CELLW + 'px"></colgroup>' +
+          '<thead>' + h1 + h2 + '</thead><tbody>' + body + sum + '</tbody>' +
+        '</table>' +
+      '</div>' +
+    '</div>';
+  }
+
+  function buildUrlView(){
+    var wrap = document.getElementById('urlView');
+    if (!wrap) return;
+    wrap.innerHTML = '';
+    [{ v: 'balken', label: 'Balken' }, { v: 'tabelle', label: 'Tabelle' }].forEach(function(b){
+      var btn = document.createElement('button');
+      btn.type = 'button';
+      btn.textContent = b.label;
+      if (b.v === urlView) btn.classList.add('active');
+      btn.addEventListener('click', function(){
+        urlView = b.v;
+        wrap.querySelectorAll('button').forEach(function(x){ x.classList.remove('active'); });
+        btn.classList.add('active');
+        renderUrlaub();
+      });
+      wrap.appendChild(btn);
+    });
+  }
+
+  function initialUrlScroll(sc){
+    var year = parseInt(sc.getAttribute('data-year'), 10);
+    var now = new Date();
+    if (year !== now.getFullYear() || sc.scrollWidth <= sc.clientWidth) return;
+    var m = now.getMonth();
+    if (sc.getAttribute('data-kind') === 'tabelle') {
+      var th = sc.querySelector('th.mh[data-m="' + m + '"]');
+      var nm = sc.querySelector('th.nm');
+      if (th && nm) sc.scrollLeft = th.offsetLeft - nm.offsetWidth;
+    } else {
+      var track = sc.querySelector('.ur-row .ur-track');
+      var n = isLeapYear(year) ? 366 : 365;
+      if (track) sc.scrollLeft = (monthStartIdx(year, m) / n) * track.offsetWidth;
+    }
+    urlScrollPos[sc.getAttribute('data-skey')] = sc.scrollLeft;
+  }
+
+  // ---------- Urlaub: Excel-Export ----------
+  function urlCols(){
     var cols = colsForGemeindeFilter(urlFilter);
     cols.sort(function(a,b){
       var ra = a.rolle === 'priester' ? 0 : 1;
@@ -900,16 +1092,185 @@
       if (ra !== rb) return ra - rb;
       return (a.name||'').localeCompare(b.name||'', 'de');
     });
+    return cols;
+  }
+
+  function loadExcelJs(cb){
+    if (window.ExcelJS) { cb(true); return; }
+    var s = document.createElement('script');
+    s.src = 'https://cdn.jsdelivr.net/npm/exceljs@4.4.0/dist/exceljs.min.js';
+    s.onload = function(){ cb(!!window.ExcelJS); };
+    s.onerror = function(){ cb(false); };
+    document.head.appendChild(s);
+  }
+
+  function addUrlaubSheet(wb, year, cols, gName){
+    var vd = vacationData(year, cols);
+    var n = vd.n;
+    var thin = { style: 'thin', color: { argb: 'FF999999' } };
+    var med = { style: 'medium', color: { argb: 'FF333333' } };
+    var FILL = {
+      month: 'FFC6E0B4', head: 'FFECE3D0', we: 'FFD9D9D9', urlaub: 'FF6E5222', ov: 'FFA24438'
+    };
+    function fill(cell, argb){ cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: argb } }; }
+    function box(cell, monthStart){
+      cell.border = { top: thin, bottom: thin, right: thin, left: monthStart ? med : thin };
+    }
+
+    var ws = wb.addWorksheet(String(year), { views: [{ state: 'frozen', xSplit: 1, ySplit: 3 }] });
+    ws.getColumn(1).width = 26;
+    for (var c = 2; c <= n + 1; c++) ws.getColumn(c).width = 3.4;
+
+    var title = ws.getCell(1, 1);
+    title.value = 'Urlaubsplaner ' + year + ' · ' + gName;
+    title.font = { bold: true, size: 14 };
+
+    var isMS = {};
+    for (var m0 = 1; m0 < 12; m0++) isMS[monthStartIdx(year, m0)] = true;
+
+    var nameHead = ws.getCell(3, 1);
+    nameHead.value = 'Mitarbeiter';
+    nameHead.font = { bold: true };
+    nameHead.alignment = { vertical: 'bottom' };
+    fill(nameHead, FILL.head); box(nameHead, false);
+
+    for (var m = 0; m < 12; m++) {
+      var base = monthStartIdx(year, m), dim = daysInMonth(year, m);
+      var c1 = 2 + base, c2 = c1 + dim - 1;
+      ws.mergeCells(2, c1, 2, c2);
+      var mc = ws.getCell(2, c1);
+      mc.value = MONATSNAMEN[m];
+      mc.font = { bold: true };
+      mc.alignment = { horizontal: 'center' };
+      fill(mc, FILL.month);
+      for (var cc = c1; cc <= c2; cc++) box(ws.getCell(2, cc), cc === c1 && m > 0);
+    }
+    for (var i = 0; i < n; i++) {
+      var wd = idxWeekday(year, i);
+      var dc = ws.getCell(3, 2 + i);
+      dc.value = parseInt(idxDate(year, i).slice(0, 2), 10);
+      dc.font = { size: 8 };
+      dc.alignment = { horizontal: 'center' };
+      fill(dc, (wd === 0 || wd === 6) ? FILL.we : FILL.head);
+      box(dc, !!isMS[i]);
+    }
+
+    var r = 4;
+    cols.forEach(function(g){
+      var nc = ws.getCell(r, 1);
+      nc.value = g.name;
+      box(nc, false);
+      var arr = vd.per[g.id];
+      for (var j = 0; j < n; j++) {
+        var cell = ws.getCell(r, 2 + j);
+        var wd2 = idxWeekday(year, j);
+        box(cell, !!isMS[j]);
+        cell.alignment = { horizontal: 'center' };
+        if (arr[j]) {
+          cell.value = 'x';
+          cell.font = { bold: true, size: 8, color: { argb: 'FFFFFFFF' } };
+          fill(cell, vd.counts[j] >= 2 ? FILL.ov : FILL.urlaub);
+        } else if (wd2 === 0 || wd2 === 6) {
+          fill(cell, FILL.we);
+        }
+      }
+      r++;
+    });
+
+    var sc = ws.getCell(r, 1);
+    sc.value = 'Anzahl im Urlaub';
+    sc.font = { bold: true };
+    box(sc, false);
+    for (var k = 0; k < n; k++) {
+      var cs = ws.getCell(r, 2 + k);
+      box(cs, !!isMS[k]);
+      cs.alignment = { horizontal: 'center' };
+      cs.font = { size: 8, bold: true, color: { argb: vd.counts[k] >= 2 ? 'FFFFFFFF' : 'FF555555' } };
+      if (vd.counts[k] > 0) cs.value = vd.counts[k];
+      if (vd.counts[k] >= 2) fill(cs, FILL.ov);
+    }
+
+    ws.pageSetup = { orientation: 'landscape', fitToPage: true, fitToWidth: 1, fitToHeight: 0 };
+  }
+
+  function exportUrlaubExcel(btn, msg){
+    var cols = urlCols();
+    if (!cols.length) return;
+    var years = relevantYears(cols);
+    var gName = GEMEINDEN[urlFilter] || '';
+    var oldLabel = btn.textContent;
+    btn.disabled = true; btn.textContent = 'Exportiere …';
+    function done(text, isErr){
+      btn.disabled = false; btn.textContent = oldLabel;
+      if (msg) { msg.textContent = text || ''; msg.className = isErr ? 'error-msg' : 'ok-msg'; msg.style.display = text ? 'block' : 'none'; }
+    }
+    loadExcelJs(function(ok){
+      if (!ok) { done('Der Excel-Export konnte nicht geladen werden. Bitte Internetverbindung prüfen.', true); return; }
+      try {
+        var wb = new window.ExcelJS.Workbook();
+        years.forEach(function(y){ addUrlaubSheet(wb, y, cols, gName); });
+        wb.xlsx.writeBuffer().then(function(buf){
+          var blob = new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+          var url = URL.createObjectURL(blob);
+          var a = document.createElement('a');
+          a.href = url;
+          a.download = 'Urlaubsplaner_' + gName.replace(/\s+/g, '_') + '.xlsx';
+          document.body.appendChild(a);
+          a.click();
+          document.body.removeChild(a);
+          setTimeout(function(){ URL.revokeObjectURL(url); }, 4000);
+          done('Excel-Datei wurde erstellt.', false);
+        }).catch(function(){ done('Beim Erstellen der Datei ist ein Fehler aufgetreten.', true); });
+      } catch (e) {
+        done('Beim Erstellen der Datei ist ein Fehler aufgetreten.', true);
+      }
+    });
+  }
+
+  function renderUrlaub(){
+    var el = document.getElementById('urlaubWrap');
+    if (!myGemeinde || activeTab !== 'urlaub') return;
+    var cols = urlCols();
     if (!cols.length) {
       el.innerHTML = '<div class="empty">Noch keine Amtsträger für diese Gemeinde eingetragen.</div>';
       return;
     }
+    if (!urlScrollBound) {
+      urlScrollBound = true;
+      el.addEventListener('scroll', function(e){
+        var t = e.target;
+        var k = t && t.getAttribute ? t.getAttribute('data-skey') : null;
+        if (k) urlScrollPos[k] = t.scrollLeft;
+      }, true);
+    }
     var years = relevantYears(cols);
     var html = '';
+    if (urlView === 'tabelle') {
+      html += '<div class="ur-export"><button type="button" class="btn-secondary" id="urlExportBtn">Als Excel-Datei exportieren</button>' +
+        '<div id="urlExportMsg" class="hint" style="display:none;"></div></div>';
+    }
     years.forEach(function(y){
-      html += yearChartHtml(y, cols);
+      html += (urlView === 'tabelle') ? yearTableHtml(y, cols) : yearChartHtml(y, cols);
     });
     el.innerHTML = html;
+    var exBtn = document.getElementById('urlExportBtn');
+    if (exBtn) exBtn.addEventListener('click', function(){ exportUrlaubExcel(exBtn, document.getElementById('urlExportMsg')); });
+
+    el.querySelectorAll('.ur-scroll').forEach(function(sc){
+      var key = sc.getAttribute('data-skey');
+      if (urlScrollPos[key] != null) sc.scrollLeft = urlScrollPos[key];
+      else initialUrlScroll(sc);
+    });
+    el.querySelectorAll('.ur-jump').forEach(function(sel){
+      sel.addEventListener('change', function(){
+        if (sel.value === '') return;
+        var sc = sel.closest('.ur-card').querySelector('.ur-scroll');
+        var th = sc.querySelector('th.mh[data-m="' + sel.value + '"]');
+        var nm = sc.querySelector('th.nm');
+        if (th && nm) sc.scrollTo({ left: th.offsetLeft - nm.offsetWidth, behavior: 'smooth' });
+        sel.value = '';
+      });
+    });
   }
 
   // ---------- Auswertung (Anwesenheits-Quoten) ----------
