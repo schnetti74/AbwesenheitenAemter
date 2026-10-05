@@ -15,7 +15,7 @@
 <style>
   :root {
     --bg: #F5F0E4; --bg-alt: #ECE3D0; --card: #FFFDF7; --ink: #21293A; --ink-soft: #5B6579;
-    --gold: #8C6A2F; --gold-strong: #6E5222; --border: #DED2B4;
+    --gold: #8C6A2F; --gold-strong: #6E5222; --orange: #D9650F; --border: #DED2B4;
     --green: #3E6E4F; --green-bg: #E3EEE3; --red: #A24438; --red-bg: #F4E4E1; --gray-bg: #EDE9DD;
     --blue: #3E5C8A; --blue-bg: #E3E9F2;
     --amber: #9C7B23; --amber-bg: #F2ECD8;
@@ -26,14 +26,14 @@
   @media (prefers-color-scheme: dark) {
     :root:not([data-theme="light"]) {
       --bg:#171B26; --bg-alt:#1E2432; --card:#212736; --ink:#EAE4D3; --ink-soft:#A7A192;
-      --gold:#D6B36E; --gold-strong:#E8C685; --border:#333B4D;
+      --gold:#D6B36E; --gold-strong:#E8C685; --orange:#F0A04B; --border:#333B4D;
       --green:#8FC49E; --green-bg:#253A2C; --red:#E2988A; --red-bg:#3B2622; --gray-bg:#2A3040;
       --blue:#9FB4D9; --blue-bg:#232C3E; --amber:#E3C878; --amber-bg:#332C1B;
     }
   }
   :root[data-theme="dark"] {
     --bg:#171B26; --bg-alt:#1E2432; --card:#212736; --ink:#EAE4D3; --ink-soft:#A7A192;
-    --gold:#D6B36E; --gold-strong:#E8C685; --border:#333B4D;
+    --gold:#D6B36E; --gold-strong:#E8C685; --orange:#F0A04B; --border:#333B4D;
     --green:#8FC49E; --green-bg:#253A2C; --red:#E2988A; --red-bg:#3B2622; --gray-bg:#2A3040;
     --blue:#9FB4D9; --blue-bg:#232C3E; --amber:#E3C878; --amber-bg:#332C1B;
   }
@@ -55,6 +55,8 @@
   .card { background:var(--card); border:1px solid var(--border); border-radius:12px; padding:14px 16px; margin-bottom:12px; }
   .termin-date { font-family:'Fraunces',Georgia,serif; font-size:1.02rem; font-weight:500; margin:0 0 2px; }
   .termin-sub { font-size:0.82rem; color:var(--ink-soft); margin:0 0 10px; }
+  .termin-sub .zero { color:var(--red); }
+  .termin-sub .one { color:var(--orange); }
   .tag { display:inline-block; font-size:0.68rem; font-weight:700; padding:2px 8px; border-radius:20px; margin-right:6px; letter-spacing:0.01em; }
   .tag.gemeinsam { background:var(--amber-bg); color:var(--amber); }
   .tag.boele { background:var(--blue-bg); color:var(--blue); }
@@ -1455,6 +1457,8 @@
     return { p: p, d: d };
   }
 
+  function cntClass(n){ return n === 0 ? ' class="zero"' : (n === 1 ? ' class="one"' : ''); }
+
   var STATUS_LABEL = { anwesend:'Anwesend', abwesend:'Abwesend', offen:'Offen' };
 
   function personListHtml(t, cols){
@@ -1498,7 +1502,9 @@
         '<div class="ueb-head" data-tid="' + t.id + '">' +
           tagHtml(t) +
           '<p class="termin-date">' + f.tag + ', ' + f.datum + (t.uhrzeit ? ' · ' + t.uhrzeit + ' Uhr' : '') + '</p>' +
-          '<p class="termin-sub">' + escapeHtml(t.bezeichnung||'') + dlHint + '<br>' + rc.p + ' Priester, ' + rc.d + ' Diakone anwesend</p>' +
+          '<p class="termin-sub">' + escapeHtml(t.bezeichnung||'') + dlHint + '<br>' +
+            '<span' + cntClass(rc.p) + '>' + rc.p + ' Priester</span>, ' +
+            '<span' + cntClass(rc.d) + '>' + rc.d + ' Diakone</span> anwesend</p>' +
           '<span class="ueb-toggle">Personen anzeigen ▾</span>' +
         '</div>' +
         '<div class="ueb-persons" style="display:none;">' + personListHtml(t, rowCols) + '</div>' +
