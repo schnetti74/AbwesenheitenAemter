@@ -224,7 +224,7 @@
       <button id="switchBtn">Wechseln</button>
     </div>
     <nav class="tabs">
-      <button class="tab-btn active" data-tab="meine">Meine Termine</button>
+      <button class="tab-btn active" data-tab="meine">Meine Eingaben</button>
       <button class="tab-btn" data-tab="uebersicht">Übersicht</button>
       <button class="tab-btn" data-tab="urlaub">Urlaub</button>
       <button class="tab-btn" data-tab="admin">Termine</button>
@@ -317,6 +317,7 @@
   var uebFilter = 'boele';
   var urlFilter = 'boele';
   var urlView = 'balken';
+  var loadErrors = { urlaub: false, amtstraeger: false };
   var urlScrollPos = {};
   var urlScrollBound = false;
   var auswFilter = 'boele';
@@ -571,8 +572,9 @@
     db.collection('amtstraeger').onSnapshot(function(snap){
       amtstraeger = snap.docs.map(function(d){ return Object.assign({ id: d.id }, d.data()); });
       amtstraeger.sort(function(a,b){ return (a.name||'').localeCompare(b.name||'', 'de'); });
-      renderUebersicht(); renderAdmin(); renderAuswertung();
-    }, function(){});
+      loadErrors.amtstraeger = false;
+      renderUebersicht(); renderAdmin(); renderUrlaub(); renderAuswertung();
+    }, function(err){ loadErrors.amtstraeger = true; renderUrlaub(); });
     db.collection('status').onSnapshot(function(snap){
       statusList = snap.docs.map(function(d){ return Object.assign({ id: d.id }, d.data()); });
       renderMeine(); renderUebersicht(); renderAuswertung();
@@ -580,9 +582,10 @@
     db.collection('urlaub').onSnapshot(function(snap){
       urlaubList = snap.docs.map(function(d){ return Object.assign({ id: d.id }, d.data()); });
       urlaubList.sort(function(a,b){ return (a.von||'') < (b.von||'') ? -1 : 1; });
+      loadErrors.urlaub = false;
       reconcileUrlaubStatus();
       renderMeine(); renderUebersicht(); renderUrlaub(); renderAuswertung();
-    }, function(){});
+    }, function(err){ loadErrors.urlaub = true; renderUrlaub(); });
   }
 
   function myBemerkung(terminId){
@@ -762,7 +765,7 @@
         '<span class="ueb-toggle">' + (urlaubBoxOpen ? 'Einklappen ▴' : 'Aufklappen ▾') + '</span>' +
       '</div>' +
       '<div class="ueb-persons" id="urlaubBoxBody" style="display:' + (urlaubBoxOpen ? 'block' : 'none') + ';">' +
-        '<p class="termin-sub" style="margin-top:10px;">Wird automatisch bei „Meine Termine" und in der Übersicht als Abwesend berücksichtigt – auch für Termine, die noch nicht angelegt sind.</p>' +
+        '<p class="termin-sub" style="margin-top:10px;">Wird automatisch bei „Meine Eingaben" und in der Übersicht als Abwesend berücksichtigt – auch für Termine, die noch nicht angelegt sind.</p>' +
         '<label for="urlVon">Von</label><input type="date" id="urlVon">' +
         '<label for="urlBis">Bis</label><input type="date" id="urlBis">' +
         '<div id="urlError" class="error-msg" style="display:none;"></div>' +
@@ -1249,6 +1252,12 @@
     var el = document.getElementById('urlaubWrap');
     if (!myGemeinde || activeTab !== 'urlaub') return;
     if (urlView === 'tabelle' && !canUseUrlaubTabelle()) urlView = 'balken';
+    if (loadErrors.urlaub || loadErrors.amtstraeger) {
+      el.innerHTML = '<div class="empty">Die Urlaubsdaten konnten nicht vollständig geladen werden. ' +
+        'Bitte Internetverbindung prüfen und die Seite neu laden. Falls das Problem bleibt, sind vermutlich die Firestore-Regeln für „' +
+        (loadErrors.urlaub ? 'urlaub' : 'amtstraeger') + '" zu streng.</div>';
+      return;
+    }
     var cols = urlCols();
     if (!cols.length) {
       el.innerHTML = '<div class="empty">Noch keine Amtsträger für diese Gemeinde eingetragen.</div>';
@@ -1447,14 +1456,17 @@
   }
 
   function countRoles(t, cols){
-    var p = 0, d = 0;
+    var p = 0, d = 0, o = 0;
     cols.forEach(function(g){
-      if (effectiveStatus(t, g.id) === 'anwesend') {
+      var st = effectiveStatus(t, g.id);
+      if (st === 'anwesend') {
         if (g.rolle === 'priester') p++;
         else if (g.rolle === 'diakon') d++;
+      } else if (st === 'offen') {
+        o++;
       }
     });
-    return { p: p, d: d };
+    return { p: p, d: d, o: o };
   }
 
   function cntClass(n){ return n === 0 ? ' class="zero"' : (n === 1 ? ' class="one"' : ''); }
@@ -1504,7 +1516,7 @@
           '<p class="termin-date">' + f.tag + ', ' + f.datum + (t.uhrzeit ? ' · ' + t.uhrzeit + ' Uhr' : '') + '</p>' +
           '<p class="termin-sub">' + escapeHtml(t.bezeichnung||'') + dlHint + '<br>' +
             '<span' + cntClass(rc.p) + '>' + rc.p + ' Priester</span>, ' +
-            '<span' + cntClass(rc.d) + '>' + rc.d + ' Diakone</span> anwesend</p>' +
+            '<span' + cntClass(rc.d) + '>' + rc.d + ' Diakone</span> anwesend (' + rc.o + ' offen)</p>' +
           '<span class="ueb-toggle">Personen anzeigen ▾</span>' +
         '</div>' +
         '<div class="ueb-persons" style="display:none;">' + personListHtml(t, rowCols) + '</div>' +
