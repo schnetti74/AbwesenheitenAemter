@@ -57,6 +57,10 @@
   .termin-sub { font-size:0.82rem; color:var(--ink-soft); margin:0 0 10px; }
   .termin-sub .zero { color:var(--red); }
   .termin-sub .one { color:var(--orange); }
+  .open-hint { display:none; width:100%; text-align:left; margin:12px 0 0; padding:10px 12px; border:1px solid var(--orange); border-left-width:4px; border-radius:8px; background:var(--bg-alt); color:var(--ink); font:inherit; font-size:0.86rem; cursor:pointer; }
+  .open-hint strong { color:var(--orange); }
+  .tab-btn { position:relative; }
+  .tab-badge { position:absolute; top:-7px; right:-4px; min-width:18px; text-align:center; padding:1px 6px; box-shadow:0 0 0 2px var(--bg); border-radius:9px; background:var(--red); color:var(--card); font-size:0.68rem; font-weight:700; line-height:1.4; }
   .tag { display:inline-block; font-size:0.68rem; font-weight:700; padding:2px 8px; border-radius:20px; margin-right:6px; letter-spacing:0.01em; }
   .tag.gemeinsam { background:var(--amber-bg); color:var(--amber); }
   .tag.boele { background:var(--blue-bg); color:var(--blue); }
@@ -232,6 +236,8 @@
     </nav>
   </header>
 
+  <button type="button" class="open-hint" id="openHint"></button>
+
   <section class="view active" id="view-meine">
     <div id="urlaubMeinBox"></div>
     <div id="meineList"></div>
@@ -318,6 +324,7 @@
   var urlFilter = 'boele';
   var urlView = 'balken';
   var loadErrors = { urlaub: false, amtstraeger: false };
+  var dataReady = { termine: false, status: false, urlaub: false };
   var urlScrollPos = {};
   var urlScrollBound = false;
   var auswFilter = 'boele';
@@ -566,6 +573,7 @@
     db.collection('termine').onSnapshot(function(snap){
       termine = snap.docs.map(function(d){ return Object.assign({ id: d.id }, d.data()); });
       termine.sort(sortByDatumZeit);
+      dataReady.termine = true;
       reconcileUrlaubStatus();
       renderMeine(); renderUebersicht(); renderAdmin(); renderAuswertung();
     }, function(){});
@@ -577,12 +585,14 @@
     }, function(err){ loadErrors.amtstraeger = true; renderUrlaub(); });
     db.collection('status').onSnapshot(function(snap){
       statusList = snap.docs.map(function(d){ return Object.assign({ id: d.id }, d.data()); });
+      dataReady.status = true;
       renderMeine(); renderUebersicht(); renderAuswertung();
     }, function(){});
     db.collection('urlaub').onSnapshot(function(snap){
       urlaubList = snap.docs.map(function(d){ return Object.assign({ id: d.id }, d.data()); });
       urlaubList.sort(function(a,b){ return (a.von||'') < (b.von||'') ? -1 : 1; });
       loadErrors.urlaub = false;
+      dataReady.urlaub = true;
       reconcileUrlaubStatus();
       renderMeine(); renderUebersicht(); renderUrlaub(); renderAuswertung();
     }, function(err){ loadErrors.urlaub = true; renderUrlaub(); });
@@ -699,8 +709,42 @@
     return '<span class="tag ' + t.gemeinde + '">' + (GEMEINDEN[t.gemeinde]||'') + '</span>';
   }
 
+  // ---------- Hinweis auf offene Termine ----------
+  // Offen = künftiger Termin der eigenen Gemeinde, für den der eigene Status "offen" ist.
+  // Urlaub zählt nicht: effectiveStatus() liefert dort 'abwesend'.
+  function myOpenTermine(){
+    var today = todayIso();
+    return termine.filter(function(t){
+      return (t.datum||'') >= today && terminMatchesGemeindeFilter(t, myGemeinde) &&
+        effectiveStatus(t, mySlug) === 'offen';
+    });
+  }
+  function updateOpenHint(){
+    var banner = document.getElementById('openHint');
+    var tabBtn = document.querySelector('.tab-btn[data-tab="meine"]');
+    if (!banner || !tabBtn) return;
+    var n = 0;
+    if (myName && mySlug && !isTerminverwalter && dataReady.termine && dataReady.status && dataReady.urlaub) {
+      n = myOpenTermine().length;
+    }
+    tabBtn.innerHTML = 'Meine Eingaben' + (n ? '<span class="tab-badge">' + n + '</span>' : '');
+    if (!n) { banner.style.display = 'none'; return; }
+    banner.innerHTML = 'Du hast noch <strong>' + n + (n === 1 ? ' Termin' : ' Termine') + '</strong> ohne Rückmeldung. Jetzt eintragen ›';
+    banner.style.display = 'block';
+  }
+  document.getElementById('openHint').addEventListener('click', function(){
+    var open = myOpenTermine();
+    if (!open.length) return;
+    document.querySelector('.tab-btn[data-tab="meine"]').click();
+    setTimeout(function(){
+      var card = document.querySelector('#meineList .card[data-tid="' + open[0].id + '"]');
+      if (card) card.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }, 60);
+  });
+
   function renderMeine(){
     var el = document.getElementById('meineList');
+    updateOpenHint();
     if (!myName) return;
     var today = todayIso();
     var relevant = termine.filter(function(t){
@@ -721,6 +765,7 @@
       var urlaubHint = aufUrlaub ? '<p class="hint" style="color:var(--gold);margin-top:8px;">Automatisch als abwesend markiert (Urlaub eingetragen). Bei Bedarf oben überschreiben.</p>' : '';
       var card = document.createElement('div');
       card.className = 'card';
+      card.setAttribute('data-tid', t.id);
       card.innerHTML =
         tagHtml(t) +
         '<p class="termin-date">' + f.tag + ', ' + f.datum + (t.uhrzeit ? ' · ' + t.uhrzeit + ' Uhr' : '') + '</p>' +
