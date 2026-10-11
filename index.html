@@ -70,7 +70,6 @@
   .offen-box { margin:10px 0 12px; padding:10px 12px; border:1px solid var(--orange); border-radius:8px; background:var(--bg-alt); }
   .offen-title { margin:0 0 4px; font-size:0.8rem; font-weight:600; color:var(--orange); }
   .offen-names { margin:0 0 8px; font-size:0.84rem; line-height:1.4; }
-  .offen-box .btn-secondary { padding:8px 12px; font-size:0.8rem; font-weight:600; color:var(--ink); }
   .open-hint { display:none; width:100%; text-align:left; margin:12px 0 0; padding:10px 12px; border:1px solid var(--orange); border-left-width:4px; border-radius:8px; background:var(--bg-alt); color:var(--ink); font:inherit; font-size:0.86rem; cursor:pointer; }
   .open-hint strong { color:var(--orange); }
   .tab-btn { position:relative; }
@@ -152,15 +151,6 @@
   textarea { resize:vertical; min-height:110px; line-height:1.5; }
   .dl-preview { padding-left:18px; margin:8px 0; font-size:0.82rem; color:var(--ink-soft); }
   .dl-preview li { padding:2px 0; }
-  .ausw-head-row { display:flex; align-items:center; gap:8px; padding:6px 0 8px; border-bottom:1px solid var(--border); margin-bottom:2px; }
-  .ausw-head-row .ausw-name { visibility:hidden; }
-  .ausw-row { display:flex; align-items:center; gap:8px; padding:9px 0; border-bottom:1px solid var(--border); }
-  .ausw-row:last-child { border-bottom:none; }
-  .ausw-name { flex:1; font-weight:600; font-size:0.86rem; }
-  .ausw-name .hint { display:block; font-weight:400; margin-top:1px; }
-  .ausw-stat { min-width:92px; text-align:right; font-size:0.72rem; color:var(--ink-soft); font-weight:600; }
-  .ausw-stat b { display:block; color:var(--ink); font-size:1rem; font-weight:700; }
-  .ausw-stat span { font-weight:400; color:var(--ink-soft); }
   input:focus, select:focus, .status-btn:focus-visible, button:focus-visible { outline:2px solid var(--gold); outline-offset:1px; }
   .checkline { display:flex; align-items:center; gap:8px; margin-top:12px; }
   .checkline input[type=checkbox] { width:18px; height:18px; }
@@ -246,7 +236,6 @@
       <button class="tab-btn" data-tab="uebersicht">Übersicht</button>
       <button class="tab-btn" data-tab="urlaub">Urlaub</button>
       <button class="tab-btn" data-tab="admin">Termine</button>
-      <button class="tab-btn" data-tab="auswertung" style="display:none;">Auswertung</button>
     </nav>
   </header>
 
@@ -272,9 +261,6 @@
     <div id="adminWrap"></div>
   </section>
 
-  <section class="view" id="view-auswertung">
-    <div id="auswertungWrap"></div>
-  </section>
 </div>
 
 <script>
@@ -315,10 +301,6 @@
   var GEMEINDEN = { boele: 'Boele', hohenlimburg: 'Hohenlimburg', beide: 'Beide Gemeinden' };
   var ROLLEN = { diakon: 'Diakon', priester: 'Priester' };
 
-  // Feste Namensliste (genau wie beim Anmelden eingegeben): nur diese Personen
-  // bekommen Zugriff auf den Tab "Auswertung".
-  var AUSWERTUNG_ALLOWED_NAMES = ['Matthias Schnettler'];
-
   // Tabellenansicht (Excel-Stil) samt Export im Urlaub-Tab: nur für Administratoren
   // und die hier aufgeführten Personen (Name genau wie beim Anmelden eingegeben).
   var URLAUB_TABELLE_ALLOWED_NAMES = ['Karsten Hilgert'];
@@ -344,9 +326,6 @@
   var dataReady = { termine: false, status: false, urlaub: false };
   var urlScrollPos = {};
   var urlScrollBound = false;
-  var auswFilter = 'boele';
-  var auswScope = 'gesamt';
-  var auswertungUnlocked = false;
   var selectedOnboardG = null;
   var selectedOnboardR = null;
   var selectedOnboardA = 'nein';
@@ -420,8 +399,6 @@
     else { wr.style.display = 'none'; }
     var termineTabBtn = document.querySelector('.tab-btn[data-tab="admin"]');
     if (termineTabBtn) termineTabBtn.style.display = adminUnlocked ? '' : 'none';
-    var auswertungTabBtn = document.querySelector('.tab-btn[data-tab="auswertung"]');
-    if (auswertungTabBtn) auswertungTabBtn.style.display = (auswertungUnlocked && !isTerminverwalter) ? '' : 'none';
     ['meine','uebersicht','urlaub'].forEach(function(tabName){
       var btn = document.querySelector('.tab-btn[data-tab="' + tabName + '"]');
       if (btn) btn.style.display = isTerminverwalter ? 'none' : '';
@@ -565,14 +542,12 @@
       if (activeTab === 'admin') renderAdmin();
       if (activeTab === 'uebersicht') { buildUebFilter(); renderUebersicht(); }
       if (activeTab === 'urlaub') { buildUrlFilter(); buildUrlView(); renderUrlaub(); }
-      if (activeTab === 'auswertung') { renderAuswertung(); }
     });
   });
   // ---------- data ----------
   function initPerson(name, gemeinde, rolle){
     myName = name; mySlug = slugify(name); myGemeinde = gemeinde; myRolle = rolle;
     isTerminverwalter = isTerminverwalterName(name);
-    auswertungUnlocked = !isTerminverwalter && AUSWERTUNG_ALLOWED_NAMES.map(slugify).indexOf(mySlug) !== -1;
     showApp();
     if (!db || isTerminverwalter) return;
     db.collection('amtstraeger').doc(mySlug).get().then(function(snap){
@@ -597,18 +572,18 @@
       termine.sort(sortByDatumZeit);
       dataReady.termine = true;
       reconcileUrlaubStatus();
-      renderMeine(); renderUebersicht(); renderAdmin(); renderAuswertung();
+      renderMeine(); renderUebersicht(); renderAdmin();
     }, function(){});
     db.collection('amtstraeger').onSnapshot(function(snap){
       amtstraeger = snap.docs.map(function(d){ return Object.assign({ id: d.id }, d.data()); });
       amtstraeger.sort(function(a,b){ return (a.name||'').localeCompare(b.name||'', 'de'); });
       loadErrors.amtstraeger = false;
-      renderUebersicht(); renderAdmin(); renderUrlaub(); renderAuswertung();
+      renderUebersicht(); renderAdmin(); renderUrlaub();
     }, function(err){ loadErrors.amtstraeger = true; renderUrlaub(); });
     db.collection('status').onSnapshot(function(snap){
       statusList = snap.docs.map(function(d){ return Object.assign({ id: d.id }, d.data()); });
       dataReady.status = true;
-      renderMeine(); renderUebersicht(); renderAuswertung();
+      renderMeine(); renderUebersicht();
     }, function(){});
     db.collection('urlaub').onSnapshot(function(snap){
       urlaubList = snap.docs.map(function(d){ return Object.assign({ id: d.id }, d.data()); });
@@ -616,7 +591,7 @@
       loadErrors.urlaub = false;
       dataReady.urlaub = true;
       reconcileUrlaubStatus();
-      renderMeine(); renderUebersicht(); renderUrlaub(); renderAuswertung();
+      renderMeine(); renderUebersicht(); renderUrlaub();
     }, function(err){ loadErrors.urlaub = true; renderUrlaub(); });
   }
 
@@ -1370,160 +1345,6 @@
     });
   }
 
-  // ---------- Auswertung (Anwesenheits-Quoten) ----------
-  function terminWeekdayBucket(t){
-    if (!t.datum) return null;
-    var d = new Date(t.datum + 'T00:00:00');
-    var wd = d.getDay();
-    if (wd === 0) return 'sonntag';
-    if (wd === 3) return 'mittwoch';
-    return null;
-  }
-  function terminAppliesTo(t, amt){
-    if (t.gemeinsam) return true;
-    if (amt.gemeinde === 'beide') return true;
-    return t.gemeinde === amt.gemeinde;
-  }
-  function isCountableTermin(t){
-    if (!t.datum || t.datum > todayIso()) return false;
-    return terminWeekdayBucket(t) !== null;
-  }
-  function auswertungStatusFor(t, amtstraegerId){
-    var docId = t.id + '__' + amtstraegerId;
-    var s = statusList.find(function(x){ return x.id === docId; });
-    if (s && s.autoUrlaub) return 'ausgeschlossen';
-    if (!s && isOnUrlaub(amtstraegerId, t.datum)) return 'ausgeschlossen';
-    if (!s || !s.status || s.status === 'offen') return 'offen';
-    return s.status;
-  }
-  function newAuswBucketPair(){ return { sonntag: { anwesend:0, total:0 }, mittwoch: { anwesend:0, total:0 } }; }
-  function buildAuswertungData(){
-    var data = {};
-    amtstraeger.forEach(function(a){
-      data[a.id] = { id: a.id, name: a.name || a.id, gemeinde: a.gemeinde, rolle: a.rolle, gesamt: newAuswBucketPair(), jahre: {}, monate: {} };
-    });
-    termine.forEach(function(t){
-      if (!isCountableTermin(t)) return;
-      var bucket = terminWeekdayBucket(t);
-      var jahr = t.datum.slice(0,4);
-      var monat = t.datum.slice(0,7);
-      amtstraeger.forEach(function(a){
-        var rec = data[a.id];
-        if (!rec || !terminAppliesTo(t, a)) return;
-        var st = auswertungStatusFor(t, a.id);
-        if (st === 'ausgeschlossen' || st === 'offen') return;
-        if (!rec.jahre[jahr]) rec.jahre[jahr] = newAuswBucketPair();
-        if (!rec.monate[monat]) rec.monate[monat] = newAuswBucketPair();
-        [rec.gesamt[bucket], rec.jahre[jahr][bucket], rec.monate[monat][bucket]].forEach(function(b){
-          b.total++;
-          if (st === 'anwesend') b.anwesend++;
-        });
-      });
-    });
-    return data;
-  }
-  function auswPct(b){
-    if (!b || !b.total) return null;
-    return Math.round(b.anwesend / b.total * 100);
-  }
-  function auswStatHtml(b){
-    var p = auswPct(b);
-    if (p === null) return '<span class="ausw-stat">–</span>';
-    return '<span class="ausw-stat"><b>' + p + ' %</b><span>(' + b.anwesend + '/' + b.total + ')</span></span>';
-  }
-  function auswScopeOptionsHtml(){
-    var years = {}, months = {};
-    termine.forEach(function(t){
-      if (!isCountableTermin(t)) return;
-      years[t.datum.slice(0,4)] = true;
-      months[t.datum.slice(0,7)] = true;
-    });
-    var html = '<option value="gesamt">Gesamt</option>';
-    var yearKeys = Object.keys(years).sort(function(a,b){ return b-a; });
-    if (yearKeys.length) {
-      html += '<optgroup label="Jahr">';
-      yearKeys.forEach(function(y){ html += '<option value="jahr:' + y + '">' + y + '</option>'; });
-      html += '</optgroup>';
-    }
-    var monthKeys = Object.keys(months).sort(function(a,b){ return a < b ? 1 : -1; });
-    if (monthKeys.length) {
-      html += '<optgroup label="Monat">';
-      monthKeys.forEach(function(m){
-        var p = m.split('-'); var mi = parseInt(p[1],10)-1;
-        html += '<option value="monat:' + m + '">' + (MONATSNAMEN[mi]||'') + ' ' + p[0] + '</option>';
-      });
-      html += '</optgroup>';
-    }
-    return html;
-  }
-  function renderAuswertung(){
-    var el = document.getElementById('auswertungWrap');
-    if (!el) return;
-    if (!auswertungUnlocked) { el.innerHTML = '<div class="empty">Kein Zugriff.</div>'; return; }
-    if (!db) { el.innerHTML = '<div class="empty">Firebase ist noch nicht eingerichtet.</div>'; return; }
-
-    var data = buildAuswertungData();
-    var cols = colsForGemeindeFilter(auswFilter);
-    cols.sort(function(a,b){
-      var ra = a.rolle === 'priester' ? 0 : 1;
-      var rb = b.rolle === 'priester' ? 0 : 1;
-      if (ra !== rb) return ra - rb;
-      return (a.name||'').localeCompare(b.name||'', 'de');
-    });
-
-    var html = '<div class="filter-row">' +
-      '<button type="button" data-g="boele" class="' + (auswFilter==='boele'?'active':'') + '">Boele</button>' +
-      '<button type="button" data-g="hohenlimburg" class="' + (auswFilter==='hohenlimburg'?'active':'') + '">Hohenlimburg</button>' +
-      '</div>';
-
-    html += '<div class="card">' +
-      '<label for="auswScope">Zeitraum</label>' +
-      '<select id="auswScope">' + auswScopeOptionsHtml() + '</select>' +
-      '<p class="termin-sub" style="margin-top:10px;">Anwesenheits-Quote je Person, getrennt nach Sonntags- und Mittwochsterminen. Es zählen nur bereits vergangene Termine; Urlaubstage fließen nicht in die Berechnung ein.</p>' +
-      '<div class="ausw-head-row"><span class="ausw-name">&nbsp;</span><span class="ausw-stat">Sonntag</span><span class="ausw-stat">Mittwoch</span></div>';
-
-    if (!cols.length) {
-      html += '<div class="empty">Noch keine Amtsträger für diese Gemeinde eingetragen.</div>';
-    } else {
-      cols.forEach(function(a){
-        var rec = data[a.id];
-        var bucketPair;
-        if (auswScope === 'gesamt') {
-          bucketPair = rec ? rec.gesamt : newAuswBucketPair();
-        } else {
-          var parts = auswScope.split(':');
-          var key = parts[1];
-          var src = rec ? (parts[0] === 'jahr' ? rec.jahre : rec.monate) : {};
-          bucketPair = src[key] || newAuswBucketPair();
-        }
-        html += '<div class="ausw-row">' +
-          '<span class="ausw-name">' + escapeHtml(a.name) + '<span class="hint">' + (ROLLEN[a.rolle]||'') + '</span></span>' +
-          auswStatHtml(bucketPair.sonntag) +
-          auswStatHtml(bucketPair.mittwoch) +
-          '</div>';
-      });
-    }
-    html += '</div>';
-
-    el.innerHTML = html;
-
-    el.querySelectorAll('.filter-row button').forEach(function(btn){
-      btn.addEventListener('click', function(){
-        auswFilter = btn.dataset.g;
-        renderAuswertung();
-      });
-    });
-    var scopeSel = document.getElementById('auswScope');
-    if (scopeSel) {
-      scopeSel.value = auswScope;
-      if (scopeSel.value !== auswScope) { auswScope = 'gesamt'; scopeSel.value = 'gesamt'; }
-      scopeSel.addEventListener('change', function(){
-        auswScope = this.value;
-        renderAuswertung();
-      });
-    }
-  }
-
   function countRoles(t, cols){
     var p = 0, d = 0, o = 0;
     cols.forEach(function(g){
@@ -1564,40 +1385,13 @@
   function openPersons(t, rowCols){
     return rowCols.filter(function(g){ return effectiveStatus(t, g.id) === 'offen'; });
   }
-  function offenText(t, names){
-    var f = fmtDatum(t.datum);
-    return 'Offene Rückmeldungen für ' + f.tag + ', ' + f.datum + (t.uhrzeit ? ' · ' + t.uhrzeit + ' Uhr' : '') +
-      (t.bezeichnung ? ' (' + t.bezeichnung + ')' : '') + ':\n' +
-      names.join('\n') + '\n\nBitte in der App unter „Meine Eingaben" zu- oder absagen.';
-  }
   function offenBlockHtml(t, rowCols){
     if (!canSeeOffeneListe()) return '';
     var names = openPersons(t, rowCols).map(function(g){ return g.name; });
     if (!names.length) return '';
     return '<div class="offen-box"><p class="offen-title">Noch keine Rückmeldung (' + names.length + ')</p>' +
-      '<p class="offen-names">' + names.map(escapeHtml).join(', ') + '</p>' +
-      '<button type="button" class="btn-secondary offen-copy" data-tid="' + t.id + '">Namen kopieren</button> ' +
-      '<span class="hint offen-msg" style="margin:0;"></span></div>';
+      '<p class="offen-names" style="margin:0;">' + names.map(escapeHtml).join(', ') + '</p></div>';
   }
-  function copyToClipboard(text){
-    return new Promise(function(resolve, reject){
-      function fallback(){
-        try {
-          var ta = document.createElement('textarea');
-          ta.value = text; ta.setAttribute('readonly', '');
-          ta.style.position = 'fixed'; ta.style.opacity = '0';
-          document.body.appendChild(ta); ta.select();
-          var ok = document.execCommand('copy');
-          document.body.removeChild(ta);
-          ok ? resolve() : reject();
-        } catch (e) { reject(e); }
-      }
-      if (navigator.clipboard && navigator.clipboard.writeText) {
-        navigator.clipboard.writeText(text).then(resolve, fallback);
-      } else { fallback(); }
-    });
-  }
-
   function renderUebersicht(){
     var el = document.getElementById('uebersichtWrap');
     var today = todayIso();
@@ -1634,21 +1428,6 @@
     el.querySelectorAll('.ueb-head').forEach(function(head){
       if (uebOpen[head.getAttribute('data-tid')]) head.querySelector('.ueb-toggle').textContent = 'Personen ausblenden ▴';
     });
-    el.querySelectorAll('.offen-copy').forEach(function(btn){
-      btn.addEventListener('click', function(){
-        var tt = termine.find(function(x){ return x.id === btn.getAttribute('data-tid'); });
-        if (!tt) return;
-        var rc2 = (tt.gemeinsam && otherGemeinde) ? cols.concat(otherCols) : cols;
-        var names = openPersons(tt, rc2).map(function(g){ return g.name; });
-        var msg = btn.parentNode.querySelector('.offen-msg');
-        copyToClipboard(offenText(tt, names)).then(function(){
-          if (msg) msg.textContent = 'Kopiert ✓';
-        }, function(){
-          if (msg) msg.textContent = 'Kopieren nicht möglich';
-        });
-      });
-    });
-
     el.querySelectorAll('.ueb-head').forEach(function(head){
       head.addEventListener('click', function(){
         var card = head.closest('.ueb-card');
@@ -1691,17 +1470,9 @@
 
     if (isRealAdmin()) html += '<div id="backupBoxWrap"></div>';
 
-    html += '<div class="card">' +
-      '<p class="section-title" style="color:var(--red);">Testphase: Alle Daten löschen</p>' +
-      '<p class="termin-sub">Löscht unwiderruflich alle Termine, Anwesenheiten, Bemerkungen, Urlaubstage und registrierten Amtsträger. Der Admin-Zugangscode bleibt erhalten. Dieser Button ist nur für die Testphase gedacht und wird danach wieder entfernt.</p>' +
-      '<button class="btn-primary" id="resetAllBtn" style="background:var(--red);">Alle Eingaben löschen</button>' +
-      '<div id="resetMsg" class="hint" style="display:none;"></div>' +
-      '</div>';
-
     el.innerHTML = html;
 
     document.getElementById('serSubmit').addEventListener('click', createSeries);
-    document.getElementById('resetAllBtn').addEventListener('click', resetAllData);
 
     renderAdmSingleBox();
     renderDlBox();
@@ -1811,27 +1582,6 @@
           }).catch(function(){ say('Beim Erstellen der Datei ist ein Fehler aufgetreten.'); });
         } catch (e) { say('Beim Erstellen der Datei ist ein Fehler aufgetreten.'); }
       });
-    });
-  }
-
-  function resetAllData(){
-    var msg = document.getElementById('resetMsg');
-    var sure = confirm('Wirklich ALLE Termine, Anwesenheiten, Bemerkungen, Urlaubstage und Amtsträger unwiderruflich löschen?');
-    if (!sure) return;
-    var sicher = confirm('Letzte Sicherheitsabfrage: Es gibt kein Zurück. Wirklich alles löschen?');
-    if (!sicher) return;
-    var collections = ['termine', 'status', 'urlaub', 'amtstraeger'];
-    var tasks = collections.map(function(colName){
-      return db.collection(colName).get().then(function(snap){
-        var batch = db.batch();
-        snap.docs.forEach(function(d){ batch.delete(d.ref); });
-        return batch.commit();
-      });
-    });
-    Promise.all(tasks).then(function(){
-      if (msg) { msg.textContent = 'Alle Daten wurden gelöscht.'; msg.style.display = 'block'; }
-    }).catch(function(){
-      if (msg) { msg.textContent = 'Beim Löschen ist ein Fehler aufgetreten.'; msg.style.display = 'block'; }
     });
   }
 
