@@ -4,6 +4,16 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Dienstplan Amtsträger · Boele &amp; Hohenlimburg</title>
+<!-- Startbildschirm / App-Symbol: Dateien liegen neben index.html. Symbol tauschen = Dateien ersetzen, ?v= erhöhen -->
+<link rel="manifest" href="manifest.webmanifest?v=1">
+<link rel="icon" type="image/png" sizes="192x192" href="icon-192.png?v=1">
+<link rel="apple-touch-icon" href="apple-touch-icon.png?v=1">
+<meta name="theme-color" content="#F5F0E4" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#171B26" media="(prefers-color-scheme: dark)">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Dienstplan">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -57,6 +67,10 @@
   .termin-sub { font-size:0.82rem; color:var(--ink-soft); margin:0 0 10px; }
   .termin-sub .zero { color:var(--red); }
   .termin-sub .one { color:var(--orange); }
+  .offen-box { margin:10px 0 12px; padding:10px 12px; border:1px solid var(--orange); border-radius:8px; background:var(--bg-alt); }
+  .offen-title { margin:0 0 4px; font-size:0.8rem; font-weight:600; color:var(--orange); }
+  .offen-names { margin:0 0 8px; font-size:0.84rem; line-height:1.4; }
+  .offen-box .btn-secondary { padding:8px 12px; font-size:0.8rem; font-weight:600; color:var(--ink); }
   .open-hint { display:none; width:100%; text-align:left; margin:12px 0 0; padding:10px 12px; border:1px solid var(--orange); border-left-width:4px; border-radius:8px; background:var(--bg-alt); color:var(--ink); font:inherit; font-size:0.86rem; cursor:pointer; }
   .open-hint strong { color:var(--orange); }
   .tab-btn { position:relative; }
@@ -309,6 +323,9 @@
   // und die hier aufgeführten Personen (Name genau wie beim Anmelden eingegeben).
   var URLAUB_TABELLE_ALLOWED_NAMES = ['Karsten Hilgert'];
 
+  // Liste offener Rückmeldungen (Übersicht): Administratoren und die hier genannten Personen.
+  var OFFENE_LISTE_ALLOWED_NAMES = ['Karsten Hilgert'];
+
   // Reservierter Name für den reinen Terminverwaltungs-Zugang (kein Amtsträger,
   // keine Gemeinde/Amt, nur der Tab "Termine"). Kann hier umbenannt werden.
   var TERMINVERWALTER_NAME = 'Termine';
@@ -420,6 +437,11 @@
       renderAdmin();
     }
     buildUebFilter();
+    // Standardansicht beim Start: Übersicht (der Terminverwalter-Account startet in "Termine")
+    if (!isTerminverwalter) {
+      var uebBtn = document.querySelector('.tab-btn[data-tab="uebersicht"]');
+      if (uebBtn) uebBtn.click();
+    }
   }
 
   function updateTerminverwalterUI(){
@@ -1101,6 +1123,12 @@
     '</div>';
   }
 
+  function isRealAdmin(){ return adminUnlocked && !isTerminverwalter; }
+  function canSeeOffeneListe(){
+    if (isRealAdmin()) return true;
+    return !!mySlug && !isTerminverwalter && OFFENE_LISTE_ALLOWED_NAMES.map(slugify).indexOf(mySlug) !== -1;
+  }
+
   function canUseUrlaubTabelle(){
     if (adminUnlocked) return true;
     return !!mySlug && URLAUB_TABELLE_ALLOWED_NAMES.map(slugify).indexOf(mySlug) !== -1;
@@ -1150,13 +1178,9 @@
 
   // ---------- Urlaub: Excel-Export ----------
   function urlCols(){
+    // Gleiche Reihenfolge wie in der Übersicht (aufgeklappter Termin): alphabetisch nach Name.
     var cols = colsForGemeindeFilter(urlFilter);
-    cols.sort(function(a,b){
-      var ra = a.rolle === 'priester' ? 0 : 1;
-      var rb = b.rolle === 'priester' ? 0 : 1;
-      if (ra !== rb) return ra - rb;
-      return (a.name||'').localeCompare(b.name||'', 'de');
-    });
+    cols.sort(function(a,b){ return (a.name||'').localeCompare(b.name||'', 'de'); });
     return cols;
   }
 
@@ -1535,6 +1559,45 @@
     return html;
   }
 
+  var uebOpen = {};
+
+  function openPersons(t, rowCols){
+    return rowCols.filter(function(g){ return effectiveStatus(t, g.id) === 'offen'; });
+  }
+  function offenText(t, names){
+    var f = fmtDatum(t.datum);
+    return 'Offene Rückmeldungen für ' + f.tag + ', ' + f.datum + (t.uhrzeit ? ' · ' + t.uhrzeit + ' Uhr' : '') +
+      (t.bezeichnung ? ' (' + t.bezeichnung + ')' : '') + ':\n' +
+      names.join('\n') + '\n\nBitte in der App unter „Meine Eingaben" zu- oder absagen.';
+  }
+  function offenBlockHtml(t, rowCols){
+    if (!canSeeOffeneListe()) return '';
+    var names = openPersons(t, rowCols).map(function(g){ return g.name; });
+    if (!names.length) return '';
+    return '<div class="offen-box"><p class="offen-title">Noch keine Rückmeldung (' + names.length + ')</p>' +
+      '<p class="offen-names">' + names.map(escapeHtml).join(', ') + '</p>' +
+      '<button type="button" class="btn-secondary offen-copy" data-tid="' + t.id + '">Namen kopieren</button> ' +
+      '<span class="hint offen-msg" style="margin:0;"></span></div>';
+  }
+  function copyToClipboard(text){
+    return new Promise(function(resolve, reject){
+      function fallback(){
+        try {
+          var ta = document.createElement('textarea');
+          ta.value = text; ta.setAttribute('readonly', '');
+          ta.style.position = 'fixed'; ta.style.opacity = '0';
+          document.body.appendChild(ta); ta.select();
+          var ok = document.execCommand('copy');
+          document.body.removeChild(ta);
+          ok ? resolve() : reject();
+        } catch (e) { reject(e); }
+      }
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(text).then(resolve, fallback);
+      } else { fallback(); }
+    });
+  }
+
   function renderUebersicht(){
     var el = document.getElementById('uebersichtWrap');
     var today = todayIso();
@@ -1564,10 +1627,27 @@
             '<span' + cntClass(rc.d) + '>' + rc.d + ' Diakone</span> anwesend (' + rc.o + ' offen)</p>' +
           '<span class="ueb-toggle">Personen anzeigen ▾</span>' +
         '</div>' +
-        '<div class="ueb-persons" style="display:none;">' + personListHtml(t, rowCols) + '</div>' +
+        '<div class="ueb-persons" style="display:' + (uebOpen[t.id] ? 'block' : 'none') + ';">' + offenBlockHtml(t, rowCols) + personListHtml(t, rowCols) + '</div>' +
       '</div>';
     });
     el.innerHTML = html;
+    el.querySelectorAll('.ueb-head').forEach(function(head){
+      if (uebOpen[head.getAttribute('data-tid')]) head.querySelector('.ueb-toggle').textContent = 'Personen ausblenden ▴';
+    });
+    el.querySelectorAll('.offen-copy').forEach(function(btn){
+      btn.addEventListener('click', function(){
+        var tt = termine.find(function(x){ return x.id === btn.getAttribute('data-tid'); });
+        if (!tt) return;
+        var rc2 = (tt.gemeinsam && otherGemeinde) ? cols.concat(otherCols) : cols;
+        var names = openPersons(tt, rc2).map(function(g){ return g.name; });
+        var msg = btn.parentNode.querySelector('.offen-msg');
+        copyToClipboard(offenText(tt, names)).then(function(){
+          if (msg) msg.textContent = 'Kopiert ✓';
+        }, function(){
+          if (msg) msg.textContent = 'Kopieren nicht möglich';
+        });
+      });
+    });
 
     el.querySelectorAll('.ueb-head').forEach(function(head){
       head.addEventListener('click', function(){
@@ -1575,6 +1655,7 @@
         var persons = card.querySelector('.ueb-persons');
         var toggle = head.querySelector('.ueb-toggle');
         var open = persons.style.display !== 'none';
+        uebOpen[head.getAttribute('data-tid')] = !open;
         persons.style.display = open ? 'none' : 'block';
         toggle.textContent = open ? 'Personen ausblenden ▴' : 'Personen anzeigen ▾';
       });
@@ -1608,6 +1689,8 @@
 
     html += '<div class="card"><p class="section-title">Bestehende Termine</p><div id="admList"></div></div>';
 
+    if (isRealAdmin()) html += '<div id="backupBoxWrap"></div>';
+
     html += '<div class="card">' +
       '<p class="section-title" style="color:var(--red);">Testphase: Alle Daten löschen</p>' +
       '<p class="termin-sub">Löscht unwiderruflich alle Termine, Anwesenheiten, Bemerkungen, Urlaubstage und registrierten Amtsträger. Der Admin-Zugangscode bleibt erhalten. Dieser Button ist nur für die Testphase gedacht und wird danach wieder entfernt.</p>' +
@@ -1622,8 +1705,113 @@
 
     renderAdmSingleBox();
     renderDlBox();
+    if (isRealAdmin()) renderBackupBox();
     renderAmtstraegerList();
     renderTermineList();
+  }
+
+  // ---------- Datensicherung (nur Administratoren) ----------
+  var backupBoxOpen = false;
+  function backupStamp(){
+    var d = new Date();
+    return d.getFullYear() + '-' + pad2(d.getMonth() + 1) + '-' + pad2(d.getDate());
+  }
+  function downloadBlob(blob, filename){
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement('a');
+    a.href = url; a.download = filename;
+    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+    setTimeout(function(){ URL.revokeObjectURL(url); }, 4000);
+  }
+  function backupJson(){
+    return {
+      app: 'Dienstplan Amtsträger Boele & Hohenlimburg',
+      exportiertAm: new Date().toISOString(),
+      termine: termine, amtstraeger: amtstraeger, status: statusList, urlaub: urlaubList
+    };
+  }
+  function backupExcel(wb){
+    var tById = {};
+    termine.forEach(function(x){ tById[x.id] = x; });
+    function sheet(name, columns, rows){
+      var ws = wb.addWorksheet(name, { views: [{ state: 'frozen', ySplit: 1 }] });
+      ws.columns = columns;
+      ws.getRow(1).font = { bold: true };
+      rows.forEach(function(r){ ws.addRow(r); });
+      ws.autoFilter = { from: { row: 1, column: 1 }, to: { row: 1, column: columns.length } };
+    }
+    sheet('Termine', [
+      { header: 'Datum', key: 'd', width: 12 }, { header: 'Uhrzeit', key: 'u', width: 9 },
+      { header: 'Bezeichnung', key: 'b', width: 28 }, { header: 'Gemeinde / Ort', key: 'o', width: 16 },
+      { header: 'Gemeinsam', key: 'g', width: 11 }, { header: 'Dienstleiter', key: 'dl', width: 22 }
+    ], termine.map(function(x){
+      return { d: x.datum || '', u: x.uhrzeit || '', b: x.bezeichnung || '', o: terminOrt(x), g: x.gemeinsam ? 'ja' : 'nein', dl: x.dienstleiter || '' };
+    }));
+    sheet('Amtsträger', [
+      { header: 'Name', key: 'n', width: 26 }, { header: 'Gemeinde', key: 'g', width: 16 }, { header: 'Rolle', key: 'r', width: 12 }
+    ], amtstraeger.map(function(a){
+      return { n: a.name || '', g: a.gemeinde === 'beide' ? 'Beide' : (GEMEINDEN[a.gemeinde] || ''), r: ROLLEN[a.rolle] || '' };
+    }));
+    var zus = statusList.filter(function(s){ return s.status || s.bemerkung; }).map(function(s){
+      var tt = tById[s.terminId] || {};
+      return { d: tt.datum || '', b: tt.bezeichnung || '', n: s.name || '', s: STATUS_LABEL[s.status] || '', bem: s.bemerkung || '', a: s.autoUrlaub ? 'ja' : '' };
+    }).sort(function(x, y){ return (x.d + x.n) < (y.d + y.n) ? -1 : 1; });
+    sheet('Zusagen', [
+      { header: 'Datum', key: 'd', width: 12 }, { header: 'Termin', key: 'b', width: 28 }, { header: 'Name', key: 'n', width: 26 },
+      { header: 'Status', key: 's', width: 12 }, { header: 'Bemerkung', key: 'bem', width: 34 }, { header: 'Automatisch (Urlaub)', key: 'a', width: 20 }
+    ], zus);
+    sheet('Urlaube', [
+      { header: 'Name', key: 'n', width: 26 }, { header: 'Gemeinde', key: 'g', width: 16 },
+      { header: 'Von', key: 'v', width: 12 }, { header: 'Bis', key: 'b', width: 12 }
+    ], urlaubList.map(function(u){
+      return { n: u.name || '', g: u.gemeinde === 'beide' ? 'Beide' : (GEMEINDEN[u.gemeinde] || ''), v: u.von || '', b: u.bis || '' };
+    }));
+  }
+  function renderBackupBox(){
+    var wrap = document.getElementById('backupBoxWrap');
+    if (!wrap) return;
+    wrap.innerHTML = '<div class="card ueb-card">' +
+      '<div class="ueb-head" id="backupBoxHead">' +
+        '<p class="section-title" style="margin-bottom:2px;">Datensicherung</p>' +
+        '<p class="hint" style="margin:0;">Termine, Amtsträger, Zusagen und Urlaube herunterladen</p>' +
+        '<span class="ueb-toggle">' + (backupBoxOpen ? 'Einklappen ▴' : 'Aufklappen ▾') + '</span>' +
+      '</div>' +
+      '<div class="ueb-persons" id="backupBoxBody" style="display:' + (backupBoxOpen ? 'block' : 'none') + ';">' +
+        '<p class="termin-sub" style="margin-top:10px;">Die Sicherung enthält den aktuellen Stand aller Daten, aber nicht den Admin-Zugangscode. Die JSON-Datei ist die vollständige Sicherung, die Excel-Datei zum Lesen und Auswerten.</p>' +
+        '<button class="btn-primary" id="bkJson">Sicherung als JSON</button>' +
+        '<button class="btn-secondary" id="bkXlsx" style="margin-top:8px;width:100%;padding:11px 12px;font-weight:600;color:var(--ink);">Sicherung als Excel</button>' +
+        '<div id="bkMsg" class="hint" style="display:none;"></div>' +
+      '</div>' +
+    '</div>';
+    wrap.querySelector('#backupBoxHead').addEventListener('click', function(){
+      backupBoxOpen = !backupBoxOpen;
+      renderBackupBox();
+    });
+    var msg = wrap.querySelector('#bkMsg');
+    function say(text){ if (msg) { msg.textContent = text; msg.style.display = text ? 'block' : 'none'; } }
+    var bj = wrap.querySelector('#bkJson');
+    if (bj) bj.addEventListener('click', function(){
+      if (!isRealAdmin()) return;
+      var blob = new Blob([JSON.stringify(backupJson(), null, 2)], { type: 'application/json' });
+      downloadBlob(blob, 'Dienstplan_Sicherung_' + backupStamp() + '.json');
+      say('JSON-Sicherung wurde erstellt.');
+    });
+    var bx = wrap.querySelector('#bkXlsx');
+    if (bx) bx.addEventListener('click', function(){
+      if (!isRealAdmin()) return;
+      say('Erstelle Excel-Datei …');
+      loadExcelJs(function(ok){
+        if (!ok) { say('Der Excel-Export konnte nicht geladen werden. Bitte Internetverbindung prüfen.'); return; }
+        try {
+          var wb = new window.ExcelJS.Workbook();
+          backupExcel(wb);
+          wb.xlsx.writeBuffer().then(function(buf){
+            downloadBlob(new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }), 'Dienstplan_Sicherung_' + backupStamp() + '.xlsx');
+            say('Excel-Sicherung wurde erstellt.');
+          }).catch(function(){ say('Beim Erstellen der Datei ist ein Fehler aufgetreten.'); });
+        } catch (e) { say('Beim Erstellen der Datei ist ein Fehler aufgetreten.'); }
+      });
+    });
   }
 
   function resetAllData(){
