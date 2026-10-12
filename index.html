@@ -173,6 +173,9 @@
   .am-row:last-child { border-bottom:none; }
   .am-row select { width:auto; min-width:100px; flex:1; }
   .am-row .btn-secondary { flex-shrink:0; }
+  .am-row > .am-controls { width:100%; }
+  .am-row > .am-controls select { width:auto; flex:1 1 44%; min-width:0; padding:8px 24px 8px 10px; font-size:0.8rem; }
+  .am-row > .am-controls select:nth-of-type(3) { flex:1 1 52%; }
   #onboarding { display:flex; align-items:center; min-height:100vh; min-height:100%; padding:24px 16px; }
   .onb-box { max-width:420px; margin:0 auto; width:100%; }
   .onb-box h1 { font-size:1.6rem; margin-bottom:8px; }
@@ -228,7 +231,7 @@
     <h1>Dienstplan Amtsträger</h1>
     <p class="place">Boele &amp; Hohenlimburg</p>
     <div class="whoami">
-      <span>Angemeldet als <strong id="whoName"></strong> <span id="whoGemeinde" class="tag"></span> <span id="whoRolle" class="tag"></span></span>
+      <span>Angemeldet als <strong id="whoName"></strong> <span id="whoGemeinde" class="tag"></span> <span id="whoRolle" class="tag"></span> <span id="whoBenutzer" class="tag gemeinsam" style="display:none;"></span></span>
       <button id="switchBtn">Wechseln</button>
     </div>
     <nav class="tabs">
@@ -301,12 +304,15 @@
   var GEMEINDEN = { boele: 'Boele', hohenlimburg: 'Hohenlimburg', beide: 'Beide Gemeinden' };
   var ROLLEN = { diakon: 'Diakon', priester: 'Priester' };
 
-  // Tabellenansicht (Excel-Stil) samt Export im Urlaub-Tab: nur für Administratoren
-  // und die hier aufgeführten Personen (Name genau wie beim Anmelden eingegeben).
-  var URLAUB_TABELLE_ALLOWED_NAMES = ['Karsten Hilgert'];
-
-  // Liste offener Rückmeldungen (Übersicht): Administratoren und die hier genannten Personen.
-  var OFFENE_LISTE_ALLOWED_NAMES = ['Karsten Hilgert'];
+  // Benutzerrollen (Verwaltung im Tab "Termine", Bearbeitung nur durch Admin):
+  //  admin            – alles, inkl. Benutzerverwaltung und Datensicherung (Anmeldung mit Admin-Code)
+  //  terminverwaltung – fester Zugang "Termine": nur der Tab "Termine"
+  //  vorsteher        – wie Amtsträger, zusätzlich Urlaub als Tabelle/Excel und Liste offener Rückmeldungen
+  //  amtstraeger      – Standard
+  // Gespeichert wird die Rolle im Feld "benutzerrolle" des Amtsträger-Dokuments. Fehlt das Feld,
+  // gilt die Vorgabe aus DEFAULT_BENUTZERROLLEN (Schlüssel = Name in Kleinbuchstaben mit Bindestrich).
+  var BENUTZERROLLEN = { admin: 'Admin', terminverwaltung: 'Terminverwaltung', vorsteher: 'Vorsteher', amtstraeger: 'Amtsträger' };
+  var DEFAULT_BENUTZERROLLEN = { 'matthias-schnettler': 'admin', 'karsten-hilgert': 'vorsteher' };
 
   // Reservierter Name für den reinen Terminverwaltungs-Zugang (kein Amtsträger,
   // keine Gemeinde/Amt, nur der Tab "Termine"). Kann hier umbenannt werden.
@@ -330,6 +336,9 @@
   var selectedOnboardR = null;
   var selectedOnboardA = 'nein';
   var adminUnlocked = false;
+  var rolesReady = false;     // Amtsträger-Liste (mit Rollen) wurde geladen
+  var claimedAdmin = false;   // erster Admin hat seine Rolle gerade übernommen
+  var boxOpen = {};           // Zustand der einklappbaren Karten im Tab "Termine"
 
   function isTerminverwalterName(name){
     return slugify(name) === slugify(TERMINVERWALTER_NAME);
@@ -398,7 +407,8 @@
     if (myRolle) { wr.textContent = ROLLEN[myRolle] || ''; wr.className = 'tag gemeinsam'; wr.style.display = ''; }
     else { wr.style.display = 'none'; }
     var termineTabBtn = document.querySelector('.tab-btn[data-tab="admin"]');
-    if (termineTabBtn) termineTabBtn.style.display = adminUnlocked ? '' : 'none';
+    if (termineTabBtn) termineTabBtn.style.display = canSeeTermine() ? '' : 'none';
+    updateBenutzerTag();
     ['meine','uebersicht','urlaub'].forEach(function(tabName){
       var btn = document.querySelector('.tab-btn[data-tab="' + tabName + '"]');
       if (btn) btn.style.display = isTerminverwalter ? 'none' : '';
@@ -471,6 +481,21 @@
       callback(!!(data && data.pin === pin));
     }).catch(function(){ callback(false); });
   }
+  // Prüft, ob sich dieser Name als Admin anmelden darf: Rolle "Admin" vergeben, oder es gibt
+  // noch gar keinen Admin (dann wird die Rolle beim Erststart übernommen).
+  function checkAdminEligibility(slug, callback){
+    if (!db) { callback('deny'); return; }
+    var defAdmins = Object.keys(DEFAULT_BENUTZERROLLEN).filter(function(k){ return DEFAULT_BENUTZERROLLEN[k] === 'admin'; });
+    if (defAdmins.indexOf(slug) !== -1) { callback('ok'); return; }
+    db.collection('amtstraeger').where('benutzerrolle', '==', 'admin').get().then(function(snap){
+      var ids = snap.docs.map(function(d){ return d.id; });
+      if (ids.indexOf(slug) !== -1) { callback('ok'); return; }
+      if (ids.length) { callback('deny'); return; }
+      return Promise.all(defAdmins.map(function(id){ return db.collection('amtstraeger').doc(id).get(); })).then(function(docs){
+        callback(docs.some(function(d){ return d.exists; }) ? 'deny' : 'claim');
+      });
+    }).catch(function(){ callback('deny'); });
+  }
   function finishOnboarding(v, isAdmin){
     try {
       localStorage.setItem('dp_name', v);
@@ -508,7 +533,14 @@
       perr.style.display = 'none';
       verifyOrSetAdminPin(pin, function(ok){
         if (!ok) { perr.textContent = 'Code ist nicht korrekt.'; perr.style.display = 'block'; return; }
-        finishOnboarding(v, true);
+        checkAdminEligibility(slugify(v), function(res){
+          if (res === 'deny') {
+            perr.textContent = 'Für diesen Namen ist keine Admin-Rolle vergeben. Bitte ohne „Administrator" anmelden oder den Admin um die Rolle bitten.';
+            perr.style.display = 'block';
+            return;
+          }
+          finishOnboarding(v, true);
+        });
       });
     } else {
       finishOnboarding(v, false);
@@ -521,7 +553,7 @@
       localStorage.removeItem('dp_rolle'); localStorage.removeItem('dp_isadmin');
       localStorage.removeItem('dp_terminverwalter');
     } catch(e){}
-    myName = null; mySlug = null; myGemeinde = null; myRolle = null; adminUnlocked = false; isTerminverwalter = false;
+    myName = null; mySlug = null; myGemeinde = null; myRolle = null; adminUnlocked = false; isTerminverwalter = false; claimedAdmin = false;
     selectedOnboardG = null; selectedOnboardR = null;
     document.getElementById('nameInput').value = '';
     document.getElementById('onbAdminPin').value = '';
@@ -549,10 +581,11 @@
     myName = name; mySlug = slugify(name); myGemeinde = gemeinde; myRolle = rolle;
     isTerminverwalter = isTerminverwalterName(name);
     showApp();
+    applyRoleUI();   // falls die Amtsträger-Liste schon vor der Anmeldung geladen wurde
     if (!db || isTerminverwalter) return;
     db.collection('amtstraeger').doc(mySlug).get().then(function(snap){
       if (!snap.exists) {
-        db.collection('amtstraeger').doc(mySlug).set({ name: myName, gemeinde: myGemeinde, rolle: myRolle, createdAt: new Date().toISOString() }).catch(function(){});
+        db.collection('amtstraeger').doc(mySlug).set({ name: myName, gemeinde: myGemeinde, rolle: myRolle, createdAt: new Date().toISOString() }, { merge: true }).catch(function(){});
       } else {
         var data = snap.data();
         var updates = {};
@@ -578,6 +611,8 @@
       amtstraeger = snap.docs.map(function(d){ return Object.assign({ id: d.id }, d.data()); });
       amtstraeger.sort(function(a,b){ return (a.name||'').localeCompare(b.name||'', 'de'); });
       loadErrors.amtstraeger = false;
+      rolesReady = true;
+      applyRoleUI();
       renderUebersicht(); renderAdmin(); renderUrlaub();
     }, function(err){ loadErrors.amtstraeger = true; renderUrlaub(); });
     db.collection('status').onSnapshot(function(snap){
@@ -841,7 +876,7 @@
     var wrap = document.getElementById('uebFilter');
     if (!wrap || !myGemeinde) return;
     var buttons;
-    if (adminUnlocked) {
+    if (isRealAdmin()) {
       buttons = [
         { f: 'boele', label: 'Boele' },
         { f: 'hohenlimburg', label: 'Hohenlimburg' }
@@ -879,7 +914,7 @@
     var wrap = document.getElementById('urlFilter');
     if (!wrap || !myGemeinde) return;
     var buttons;
-    if (adminUnlocked) {
+    if (isRealAdmin()) {
       buttons = [
         { f: 'boele', label: 'Boele' },
         { f: 'hohenlimburg', label: 'Hohenlimburg' }
@@ -1098,15 +1133,64 @@
     '</div>';
   }
 
-  function isRealAdmin(){ return adminUnlocked && !isTerminverwalter; }
-  function canSeeOffeneListe(){
-    if (isRealAdmin()) return true;
-    return !!mySlug && !isTerminverwalter && OFFENE_LISTE_ALLOWED_NAMES.map(slugify).indexOf(mySlug) !== -1;
+  function roleOfDoc(a){
+    if (!a) return 'amtstraeger';
+    return a.benutzerrolle || DEFAULT_BENUTZERROLLEN[a.id || slugify(a.name)] || 'amtstraeger';
   }
-
+  function myBenutzerrolle(){
+    if (isTerminverwalter) return 'terminverwaltung';
+    if (claimedAdmin) return 'admin';
+    var doc = amtstraeger.find(function(a){ return a.id === mySlug; });
+    return doc ? roleOfDoc(doc) : (DEFAULT_BENUTZERROLLEN[mySlug] || 'amtstraeger');
+  }
+  // Admin-Rechte: erfolgreiche Anmeldung mit Admin-Code UND Rolle "Admin" (sobald die Rollen geladen sind).
+  function isRealAdmin(){
+    if (!adminUnlocked || isTerminverwalter) return false;
+    return rolesReady ? myBenutzerrolle() === 'admin' : true;
+  }
+  function canSeeTermine(){ return isTerminverwalter || isRealAdmin(); }
+  function canSeeOffeneListe(){
+    if (isTerminverwalter || !mySlug) return false;
+    return isRealAdmin() || myBenutzerrolle() === 'vorsteher';
+  }
   function canUseUrlaubTabelle(){
-    if (adminUnlocked) return true;
-    return !!mySlug && URLAUB_TABELLE_ALLOWED_NAMES.map(slugify).indexOf(mySlug) !== -1;
+    if (isTerminverwalter || !mySlug) return false;
+    return isRealAdmin() || myBenutzerrolle() === 'vorsteher';
+  }
+  function updateBenutzerTag(){
+    var el = document.getElementById('whoBenutzer');
+    if (!el) return;
+    var r = isRealAdmin() ? 'admin' : myBenutzerrolle();
+    if (!myName || r === 'amtstraeger') { el.style.display = 'none'; return; }
+    el.textContent = BENUTZERROLLEN[r] || '';
+    el.style.display = '';
+  }
+  // Wird aufgerufen, sobald sich die Amtsträger-Liste (und damit Rollen) ändert.
+  function enforceRoles(){
+    if (!rolesReady || !myName || isTerminverwalter) return;
+    if (adminUnlocked && !claimedAdmin && myBenutzerrolle() !== 'admin') {
+      var adminExists = amtstraeger.some(function(a){ return roleOfDoc(a) === 'admin'; });
+      if (!adminExists && db) {
+        // Es gibt noch keinen Admin in der Benutzerverwaltung: der bisherige Admin übernimmt die Rolle.
+        claimedAdmin = true;
+        db.collection('amtstraeger').doc(mySlug).set({ benutzerrolle: 'admin' }, { merge: true }).catch(function(){});
+      } else {
+        adminUnlocked = false;
+        try { localStorage.setItem('dp_isadmin', '0'); } catch (e) {}
+      }
+    }
+  }
+  function applyRoleUI(){
+    if (!myName) return;
+    enforceRoles();
+    var admBtn = document.querySelector('.tab-btn[data-tab="admin"]');
+    if (admBtn) admBtn.style.display = canSeeTermine() ? '' : 'none';
+    if (activeTab === 'admin' && !canSeeTermine()) {
+      var ub = document.querySelector('.tab-btn[data-tab="uebersicht"]');
+      if (ub) ub.click();
+    }
+    updateBenutzerTag();
+    buildUrlView();
   }
 
   function buildUrlView(){
@@ -1445,13 +1529,13 @@
   function renderAdmin(){
     var el = document.getElementById('adminWrap');
     if (!db) { el.innerHTML = '<div class="empty">Firebase ist noch nicht eingerichtet.</div>'; return; }
-    if (!adminUnlocked) { el.innerHTML = '<div class="empty">Kein Zugriff.</div>'; return; }
+    if (!canSeeTermine()) { el.innerHTML = '<div class="empty">Kein Zugriff.</div>'; return; }
 
     var html = '';
 
     html += '<div class="card">' +
       '<p class="section-title">Serientermine für einen Monat</p>' +
-      '<p class="termin-sub">Erstellt für jeden Mittwoch einen gemeinsamen Termin (19:30), für jeden Sonntag je einen Termin pro Gemeinde (10:00) sowie eine Ämterstunde (19:30) am Donnerstag nach dem ersten Sonntag des Monats, am jeweils anderen Ort als die Mittwochsgottesdienste. Bereits vorhandene Termine am selben Tag werden nicht doppelt angelegt.</p>' +
+      '<p class="termin-sub">Erstellt für jeden Mittwoch einen gemeinsamen Termin (19:30), für jeden Sonntag je einen Termin pro Gemeinde (10:00) sowie eine Ämterstunde (19:30) am Donnerstag nach dem ersten Sonntag des Monats, am selben Ort wie die Mittwochsgottesdienste. Bereits vorhandene Termine am selben Tag werden nicht doppelt angelegt.</p>' +
       '<label for="serMonth">Monat</label>' +
       '<select id="serMonth">' + monthOptionsHtml() + '</select>' +
       '<label for="serOrt">Ort der gemeinsamen Mittwochsgottesdienste</label>' +
@@ -1464,9 +1548,9 @@
 
     html += '<div id="dlBoxWrap"></div>';
 
-    html += '<div class="card"><p class="section-title">Amtsträger</p><div id="amList"></div></div>';
+    html += '<div id="amBoxWrap"></div>';
 
-    html += '<div class="card"><p class="section-title">Bestehende Termine</p><div id="admList"></div></div>';
+    html += '<div id="termBoxWrap"></div>';
 
     if (isRealAdmin()) html += '<div id="backupBoxWrap"></div>';
 
@@ -1477,8 +1561,30 @@
     renderAdmSingleBox();
     renderDlBox();
     if (isRealAdmin()) renderBackupBox();
+    renderBox('amBoxWrap', 'am', '⚙ Benutzerverwaltung', amtstraeger.length + ' Benutzer', '<div id="amList"></div>');
+    renderBox('termBoxWrap', 'term', 'Bestehende Termine', termine.length + ' Termine', '<div id="admList"></div>');
     renderAmtstraegerList();
     renderTermineList();
+  }
+
+  // Einklappbare Karte (gleiche Optik wie die anderen Admin-Boxen); der Zustand bleibt beim Neuzeichnen erhalten.
+  function renderBox(wrapId, key, title, hint, innerHtml){
+    var wrap = document.getElementById(wrapId);
+    if (!wrap) return;
+    var open = !!boxOpen[key];
+    wrap.innerHTML = '<div class="card ueb-card">' +
+      '<div class="ueb-head">' +
+        '<p class="section-title" style="margin-bottom:2px;">' + title + '</p>' +
+        (hint ? '<p class="hint" style="margin:0;">' + hint + '</p>' : '') +
+        '<span class="ueb-toggle">' + (open ? 'Einklappen ▴' : 'Aufklappen ▾') + '</span>' +
+      '</div>' +
+      '<div class="ueb-persons" style="display:' + (open ? 'block' : 'none') + ';">' + innerHtml + '</div>' +
+    '</div>';
+    wrap.querySelector('.ueb-head').addEventListener('click', function(){
+      boxOpen[key] = !boxOpen[key];
+      wrap.querySelector('.ueb-persons').style.display = boxOpen[key] ? 'block' : 'none';
+      wrap.querySelector('.ueb-toggle').textContent = boxOpen[key] ? 'Einklappen ▴' : 'Aufklappen ▾';
+    });
   }
 
   // ---------- Datensicherung (nur Administratoren) ----------
@@ -1741,13 +1847,13 @@
     var toCreate = [];
     var today = todayIso();
 
-    // Ämterstunde: Donnerstag nach dem ersten Sonntag des Monats, am jeweils anderen Ort.
+    // Ämterstunde: Donnerstag nach dem ersten Sonntag des Monats, am selben Ort wie die Mittwochsgottesdienste.
     var firstSunday = new Date(year, month-1, 1);
     while (firstSunday.getDay() !== 0) firstSunday.setDate(firstSunday.getDate()+1);
     var amterDatumObj = new Date(firstSunday);
     amterDatumObj.setDate(amterDatumObj.getDate()+4);
     var amterIso = amterDatumObj.getFullYear() + '-' + String(amterDatumObj.getMonth()+1).padStart(2,'0') + '-' + String(amterDatumObj.getDate()).padStart(2,'0');
-    var amterOrt = ortVal === 'boele' ? 'hohenlimburg' : 'boele';
+    var amterOrt = ortVal;
 
     var d = new Date(year, month-1, 1);
     while (d.getMonth() === month-1) {
@@ -1876,32 +1982,81 @@
   function renderAmtstraegerList(){
     var list = document.getElementById('amList');
     if (!list) return;
-    if (!amtstraeger.length) { list.innerHTML = '<div class="empty" style="padding:16px 0;">Noch niemand eingetragen.</div>'; return; }
+    var canEdit = isRealAdmin();
     list.innerHTML = '';
+
+    var info = document.createElement('p');
+    info.className = 'termin-sub';
+    info.style.marginTop = '10px';
+    info.innerHTML = '<b>Rollen:</b> Admin = alles inkl. Benutzerverwaltung und Datensicherung (Anmeldung mit Admin-Code). ' +
+      'Terminverwaltung = nur der Tab „Termine" (fester Zugang „' + escapeHtml(TERMINVERWALTER_NAME) + '"). ' +
+      'Vorsteher = wie Amtsträger, zusätzlich Urlaub als Tabelle/Excel und Liste offener Rückmeldungen. ' +
+      'Amtsträger = Standard.' + (canEdit ? '' : ' Änderungen kann nur der Admin vornehmen.');
+    list.appendChild(info);
+
+    // Fester Zugang der Terminverwaltung
+    var tv = document.createElement('div');
+    tv.className = 'am-row';
+    tv.innerHTML = '<span>' + escapeHtml(TERMINVERWALTER_NAME) + ' <span class="hint" style="margin:0;">(fester Zugang)</span></span>' +
+      '<span class="tag gemeinsam">Terminverwaltung</span>';
+    list.appendChild(tv);
+
+    if (!amtstraeger.length) {
+      var empty = document.createElement('div');
+      empty.className = 'empty'; empty.style.padding = '16px 0'; empty.textContent = 'Noch niemand eingetragen.';
+      list.appendChild(empty);
+      return;
+    }
     amtstraeger.forEach(function(g){
       var row = document.createElement('div');
       row.className = 'am-row';
-      row.innerHTML = '<span>' + escapeHtml(g.name) + '</span>';
+      var isMe = g.id === mySlug;
+      var rolle = roleOfDoc(g);
+      if (!canEdit) {
+        row.innerHTML = '<span>' + escapeHtml(g.name) + '<br><span class="hint" style="margin:0;">' +
+          (GEMEINDEN[g.gemeinde] || '') + ' · ' + (ROLLEN[g.rolle] || '') + '</span></span>' +
+          '<span class="tag gemeinsam">' + (BENUTZERROLLEN[rolle] || '') + '</span>';
+        list.appendChild(row);
+        return;
+      }
+      row.innerHTML = '<span>' + escapeHtml(g.name) + (isMe ? ' <span class="hint" style="margin:0;">(du)</span>' : '') + '</span>';
       var right = document.createElement('span');
+      right.className = 'am-controls';
       right.style.display = 'flex'; right.style.gap = '6px'; right.style.alignItems = 'center'; right.style.flexWrap = 'wrap';
       var selG = document.createElement('select');
-      selG.innerHTML = '<option value="boele">Boele</option><option value="hohenlimburg">Hohenlimburg</option><option value="beide">Beide Gemeinden</option>';
+      selG.innerHTML = '<option value="boele">Boele</option><option value="hohenlimburg">Hohenlimburg</option><option value="beide">Beide</option>';
       selG.value = g.gemeinde;
       selG.addEventListener('change', function(){
+        if (!isRealAdmin()) return;
         db.collection('amtstraeger').doc(g.id).update({ gemeinde: selG.value }).catch(function(){});
       });
       var selR = document.createElement('select');
       selR.innerHTML = '<option value="diakon">Diakon</option><option value="priester">Priester</option>';
       selR.value = g.rolle || 'diakon';
       selR.addEventListener('change', function(){
+        if (!isRealAdmin()) return;
         db.collection('amtstraeger').doc(g.id).update({ rolle: selR.value }).catch(function(){});
       });
-      var del = document.createElement('button');
-      del.className = 'btn-secondary btn-danger'; del.textContent = 'Entfernen';
-      del.addEventListener('click', function(){
-        db.collection('amtstraeger').doc(g.id).delete().catch(function(){});
+      var selB = document.createElement('select');
+      selB.setAttribute('aria-label', 'Rolle');
+      selB.innerHTML = '<option value="amtstraeger">Amtsträger</option><option value="vorsteher">Vorsteher</option><option value="admin">Admin</option>';
+      selB.value = rolle;
+      if (isMe) { selB.disabled = true; selB.title = 'Die eigene Rolle kann nicht geändert werden.'; }
+      selB.addEventListener('change', function(){
+        if (!isRealAdmin() || isMe) return;
+        db.collection('amtstraeger').doc(g.id).update({ benutzerrolle: selB.value }).catch(function(){});
       });
-      right.appendChild(selG); right.appendChild(selR); right.appendChild(del);
+      right.appendChild(selG); right.appendChild(selR); right.appendChild(selB);
+      if (!isMe) {
+        var del = document.createElement('button');
+        del.className = 'btn-secondary btn-danger'; del.textContent = 'Entfernen';
+        del.addEventListener('click', function(){
+          if (!isRealAdmin()) return;
+          if (!confirm(g.name + ' wirklich aus der Benutzerliste entfernen?')) return;
+          db.collection('amtstraeger').doc(g.id).delete().catch(function(){});
+        });
+        right.appendChild(del);
+      }
       row.appendChild(right);
       list.appendChild(row);
     });
