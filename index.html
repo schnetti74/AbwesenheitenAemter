@@ -100,6 +100,7 @@
   .badge.has-bem::after { content:''; position:absolute; top:-2px; right:-2px; width:7px; height:7px; border-radius:50%; background:var(--gold-strong); }
   .ueb-card { padding:0; overflow:hidden; }
   .ueb-head { padding:14px 16px; cursor:pointer; }
+  .ueb-head > .tag:first-child { margin-left:-8px; }
   .ueb-toggle { display:block; font-size:0.78rem; color:var(--gold); font-weight:600; margin-top:8px; }
   .ueb-persons { padding:0 16px 14px; border-top:1px solid var(--border); margin-top:2px; }
   .person-row { display:flex; align-items:center; gap:8px; padding:7px 0; border-top:1px solid var(--border); }
@@ -231,7 +232,7 @@
     <h1>Dienstplan Amtsträger</h1>
     <p class="place">Boele &amp; Hohenlimburg</p>
     <div class="whoami">
-      <span>Angemeldet als <strong id="whoName"></strong> <span id="whoGemeinde" class="tag"></span> <span id="whoRolle" class="tag"></span> <span id="whoBenutzer" class="tag gemeinsam" style="display:none;"></span></span>
+      <span>Angemeldet als <strong id="whoName"></strong></span>
       <button id="switchBtn">Wechseln</button>
     </div>
     <nav class="tabs">
@@ -400,15 +401,8 @@
     document.getElementById('onboarding').style.display = 'none';
     document.getElementById('appWrap').style.display = 'block';
     document.getElementById('whoName').textContent = myName;
-    var wg = document.getElementById('whoGemeinde');
-    if (myGemeinde) { wg.textContent = GEMEINDEN[myGemeinde] || ''; wg.className = 'tag ' + myGemeinde; wg.style.display = ''; }
-    else { wg.style.display = 'none'; }
-    var wr = document.getElementById('whoRolle');
-    if (myRolle) { wr.textContent = ROLLEN[myRolle] || ''; wr.className = 'tag gemeinsam'; wr.style.display = ''; }
-    else { wr.style.display = 'none'; }
     var termineTabBtn = document.querySelector('.tab-btn[data-tab="admin"]');
     if (termineTabBtn) termineTabBtn.style.display = canSeeTermine() ? '' : 'none';
-    updateBenutzerTag();
     ['meine','uebersicht','urlaub'].forEach(function(tabName){
       var btn = document.querySelector('.tab-btn[data-tab="' + tabName + '"]');
       if (btn) btn.style.display = isTerminverwalter ? 'none' : '';
@@ -1157,14 +1151,6 @@
     if (isTerminverwalter || !mySlug) return false;
     return isRealAdmin() || myBenutzerrolle() === 'vorsteher';
   }
-  function updateBenutzerTag(){
-    var el = document.getElementById('whoBenutzer');
-    if (!el) return;
-    var r = isRealAdmin() ? 'admin' : myBenutzerrolle();
-    if (!myName || r === 'amtstraeger') { el.style.display = 'none'; return; }
-    el.textContent = BENUTZERROLLEN[r] || '';
-    el.style.display = '';
-  }
   // Wird aufgerufen, sobald sich die Amtsträger-Liste (und damit Rollen) ändert.
   function enforceRoles(){
     if (!rolesReady || !myName || isTerminverwalter) return;
@@ -1189,7 +1175,6 @@
       var ub = document.querySelector('.tab-btn[data-tab="uebersicht"]');
       if (ub) ub.click();
     }
-    updateBenutzerTag();
     buildUrlView();
   }
 
