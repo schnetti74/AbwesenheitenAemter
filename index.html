@@ -438,6 +438,29 @@
     }
   }
   document.getElementById('nameInput').addEventListener('input', updateTerminverwalterUI);
+  // Bekannter Name: Gemeinde und Amt automatisch vorauswählen.
+  var autoFilled = false, lookupSeq = 0;
+  function applyKnownPerson(d){
+    if (d && (d.gemeinde === 'boele' || d.gemeinde === 'hohenlimburg' || d.gemeinde === 'beide')) selectG(d.gemeinde);
+    if (d && (d.rolle === 'diakon' || d.rolle === 'priester')) selectR(d.rolle);
+    autoFilled = true;
+  }
+  function lookupKnownPerson(){
+    var v = document.getElementById('nameInput').value.trim();
+    var seq = ++lookupSeq;
+    if (!v || isTerminverwalterName(v)) return;
+    var slug = slugify(v);
+    var local = (typeof amtstraeger !== 'undefined' ? amtstraeger : []).filter(function(a){ return a.id === slug; })[0];
+    if (local) { applyKnownPerson(local); return; }
+    if (autoFilled) { selectG(null); selectR(null); autoFilled = false; }
+    if (!db) return;
+    db.collection('amtstraeger').doc(slug).get().then(function(snap){
+      if (seq !== lookupSeq || !snap.exists) return;
+      applyKnownPerson(snap.data());
+    }).catch(function(){});
+  }
+  document.getElementById('nameInput').addEventListener('input', lookupKnownPerson);
+  document.getElementById('nameInput').addEventListener('blur', lookupKnownPerson);
 
   document.getElementById('gBoele').addEventListener('click', function(){ selectG('boele'); });
   document.getElementById('gHohenlimburg').addEventListener('click', function(){ selectG('hohenlimburg'); });
