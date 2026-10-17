@@ -101,6 +101,11 @@
   .ueb-card { padding:0; overflow:hidden; }
   .ueb-head { padding:14px 16px; cursor:pointer; }
   .ueb-head > .tag:first-child { margin-left:-8px; }
+  .url-card { border-left:5px solid var(--orange); background:var(--amber-bg); }
+  .url-ico { margin-right:6px; }
+  .url-intro { font-size:0.82rem; color:var(--ink); margin:8px 0 0; }
+  .url-btn { display:block; text-align:center; margin-top:12px; padding:10px 12px; border-radius:10px; background:var(--orange); color:var(--card); font-weight:700; font-size:0.9rem; }
+  .meine-heading { margin:18px 2px 8px; }
   .ueb-toggle { display:block; font-size:0.78rem; color:var(--gold); font-weight:600; margin-top:8px; }
   .ueb-persons { padding:0 16px 14px; border-top:1px solid var(--border); margin-top:2px; }
   .person-row { display:flex; align-items:center; gap:8px; padding:7px 0; border-top:1px solid var(--border); }
@@ -247,6 +252,7 @@
 
   <section class="view active" id="view-meine">
     <div id="urlaubMeinBox"></div>
+    <p class="section-title meine-heading">Meine Termine</p>
     <div id="meineList"></div>
   </section>
 
@@ -851,12 +857,13 @@
         '<button class="btn-secondary btn-danger" data-id="' + u.id + '">Löschen</button>' +
         '</div></div>';
     });
-    var countHint = list.length ? (list.length + ' eingetragen') : 'keine eingetragen';
-    box.innerHTML = '<div class="card ueb-card">' +
+    var countHint = list.length ? ('Aktuell ' + list.length + (list.length === 1 ? ' Urlaub' : ' Urlaube') + ' eingetragen') : 'Noch kein Urlaub eingetragen';
+    var intro = list.length ? '' : '<p class="url-intro">Du bist im Urlaub? Trage ihn hier einmal ein – dann giltst du für alle Termine in dieser Zeit automatisch als abwesend.</p>';
+    box.innerHTML = '<div class="card ueb-card url-card">' +
       '<div class="ueb-head" id="urlaubBoxHead">' +
-        '<p class="section-title" style="margin-bottom:2px;">Meine Urlaubstage</p>' +
-        '<p class="hint" style="margin:0;">' + countHint + '</p>' +
-        '<span class="ueb-toggle">' + (urlaubBoxOpen ? 'Einklappen ▴' : 'Aufklappen ▾') + '</span>' +
+        '<p class="section-title" style="margin-bottom:2px;"><span class="url-ico" aria-hidden="true">🌴</span>Meine Urlaubstage</p>' +
+        '<p class="hint" style="margin:0;">' + countHint + '</p>' + intro +
+        '<span class="url-btn">' + (urlaubBoxOpen ? 'Schließen ▴' : '＋ Urlaub eintragen') + '</span>' +
       '</div>' +
       '<div class="ueb-persons" id="urlaubBoxBody" style="display:' + (urlaubBoxOpen ? 'block' : 'none') + ';">' +
         '<p class="termin-sub" style="margin-top:10px;">Wird automatisch bei „Meine Eingaben" und in der Übersicht als Abwesend berücksichtigt – auch für Termine, die noch nicht angelegt sind.</p>' +
