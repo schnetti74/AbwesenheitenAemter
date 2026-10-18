@@ -360,6 +360,14 @@
     if (filterVal === 'beide') return true;
     return !!t.gemeinsam || t.gemeinde === filterVal;
   }
+  // Boele: erst Diakone, dann Priester, jeweils nach Name sortiert.
+  function sortDiakonPriester(list){
+    return list.slice().sort(function(a,b){
+      var ra = a.rolle === 'diakon' ? 0 : 1, rb = b.rolle === 'diakon' ? 0 : 1;
+      if (ra !== rb) return ra - rb;
+      return (a.name||'').localeCompare(b.name||'', 'de');
+    });
+  }
   function slugify(s){
     return (s||'').trim().toLowerCase()
       .normalize('NFD').replace(/[\u0300-\u036f]/g,'')
@@ -1259,7 +1267,7 @@
     // Gleiche Reihenfolge wie in der Übersicht (aufgeklappter Termin): alphabetisch nach Name.
     var cols = colsForGemeindeFilter(urlFilter);
     cols.sort(function(a,b){ return (a.name||'').localeCompare(b.name||'', 'de'); });
-    return cols;
+    return urlFilter === 'boele' ? sortDiakonPriester(cols) : cols;
   }
 
   function loadExcelJs(cb){
@@ -1517,6 +1525,7 @@
         rowCols = amtstraeger.filter(function(a){ return a.gemeinde === 'hohenlimburg' || a.gemeinde === 'beide'; })
           .concat(amtstraeger.filter(function(a){ return a.gemeinde === 'boele'; }));
       }
+      if (uebFilter === 'boele') rowCols = sortDiakonPriester(rowCols);
       var rc = countRoles(t, rowCols);
       var dlHint = t.dienstleiter ? (' · Dienstleiter: ' + escapeHtml(t.dienstleiter)) : '';
       html += '<div class="card ueb-card">' +
