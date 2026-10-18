@@ -100,7 +100,7 @@
   .badge.has-bem::after { content:''; position:absolute; top:-2px; right:-2px; width:7px; height:7px; border-radius:50%; background:var(--gold-strong); }
   .ueb-card { padding:0; overflow:hidden; }
   .ueb-head { padding:14px 16px; cursor:pointer; }
-  .ueb-head > .tag:first-child { margin-left:-8px; }
+  .ueb-head > .tag:first-child, #meineList .card > .tag:first-child { margin-left:-8px; font-size:0.82rem; padding:2px 8px; }
   .url-card { border-left:4px solid var(--orange); }
   .url-ico { margin-right:6px; }
   .url-intro { font-size:0.8rem; color:var(--ink-soft); margin:8px 0 0; }
@@ -756,9 +756,13 @@
     });
   }
 
+  function bezLabel(t){
+    var b = t.bezeichnung || 'Gottesdienst';
+    return /^(sonntags|mittwochs)gottesdienst$/i.test(b.trim()) ? 'Gottesdienst' : b;
+  }
   function tagHtml(t){
     if (t.gemeinsam) {
-      var ortLabel = t.ort ? (' · in ' + (GEMEINDEN[t.ort]||'')) : '';
+      var ortLabel = t.ort ? (' in ' + (GEMEINDEN[t.ort]||'')) : '';
       return '<span class="tag gemeinsam">Gemeinsam' + ortLabel + '</span>';
     }
     return '<span class="tag ' + t.gemeinde + '">' + (GEMEINDEN[t.gemeinde]||'') + '</span>';
@@ -816,7 +820,7 @@
       var st = effectiveStatus(t, mySlug);
       var bem = myBemerkung(t.id);
       var aufUrlaub = isAutoUrlaubStatus(t.id, mySlug);
-      var dl = t.dienstleiter ? ('<br>Dienstleiter: ' + escapeHtml(t.dienstleiter)) : '';
+      var dl = t.dienstleiter ? (' · Dienstleiter: ' + escapeHtml(t.dienstleiter)) : '';
       var urlaubHint = aufUrlaub ? '<p class="hint" style="color:var(--gold);margin-top:8px;">Automatisch als abwesend markiert (Urlaub eingetragen). Bei Bedarf oben überschreiben.</p>' : '';
       var card = document.createElement('div');
       card.className = 'card';
@@ -824,7 +828,7 @@
       card.innerHTML =
         tagHtml(t) +
         '<p class="termin-date">' + f.tag + ', ' + f.datum + (t.uhrzeit ? ' · ' + t.uhrzeit + ' Uhr' : '') + '</p>' +
-        '<p class="termin-sub">' + escapeHtml(t.bezeichnung || 'Gottesdienst') + dl + '</p>' +
+        '<p class="termin-sub">' + escapeHtml(bezLabel(t)) + dl + '</p>' +
         '<div class="status-row">' +
           '<button class="status-btn sb-anwesend' + (st==='anwesend'?' sel-anwesend':'') + '">Anwesend</button>' +
           '<button class="status-btn sb-abwesend' + (st==='abwesend'?' sel-abwesend':'') + '">Abwesend</button>' +
@@ -1175,11 +1179,11 @@
   function canSeeTermine(){ return isTerminverwalter || isRealAdmin(); }
   function canSeeOffeneListe(){
     if (isTerminverwalter || !mySlug) return false;
-    return isRealAdmin() || myBenutzerrolle() === 'vorsteher';
+    return isRealAdmin() || myBenutzerrolle() === 'vorsteher' || myBenutzerrolle() === 'admin';
   }
   function canUseUrlaubTabelle(){
     if (isTerminverwalter || !mySlug) return false;
-    return isRealAdmin() || myBenutzerrolle() === 'vorsteher';
+    return isRealAdmin() || myBenutzerrolle() === 'vorsteher' || myBenutzerrolle() === 'admin';
   }
   // Wird aufgerufen, sobald sich die Amtsträger-Liste (und damit Rollen) ändert.
   function enforceRoles(){
@@ -1508,14 +1512,18 @@
     var html = '';
     rows.forEach(function(t){
       var f = fmtDatum(t.datum);
-      var rowCols = (t.gemeinsam && otherGemeinde) ? cols.concat(otherCols) : cols;
+      var rowCols = cols;
+      if (t.gemeinsam && otherGemeinde) {
+        rowCols = amtstraeger.filter(function(a){ return a.gemeinde === 'hohenlimburg' || a.gemeinde === 'beide'; })
+          .concat(amtstraeger.filter(function(a){ return a.gemeinde === 'boele'; }));
+      }
       var rc = countRoles(t, rowCols);
       var dlHint = t.dienstleiter ? (' · Dienstleiter: ' + escapeHtml(t.dienstleiter)) : '';
       html += '<div class="card ueb-card">' +
         '<div class="ueb-head" data-tid="' + t.id + '">' +
           tagHtml(t) +
           '<p class="termin-date">' + f.tag + ', ' + f.datum + (t.uhrzeit ? ' · ' + t.uhrzeit + ' Uhr' : '') + '</p>' +
-          '<p class="termin-sub">' + escapeHtml(t.bezeichnung||'') + dlHint + '<br>' +
+          '<p class="termin-sub">' + escapeHtml(bezLabel(t)) + dlHint + '<br>' +
             '<span' + cntClass(rc.p) + '>' + rc.p + ' Priester</span>, ' +
             '<span' + cntClass(rc.d) + '>' + rc.d + ' Diakone</span> anwesend (' + rc.o + ' offen)</p>' +
           '<span class="ueb-toggle">Personen anzeigen ▾</span>' +
